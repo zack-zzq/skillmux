@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "kdskillhub-zack"
-version = "1.0.1"
+version = "1.0.3"
 description = "KDSkillHub Cli 重新实现"
 readme = "README.md"
 requires-python = ">=3.8.1"
