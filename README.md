@@ -1,6 +1,6 @@
-# Skillhub CLI
+# KDSkillHub CLI
 
-Skillhub CLI 是一个用于管理 Skillhub 商店技能的命令行工具，支持搜索、安装、更新和卸载技能，并可按 IDE/工具类型分发安装目录。
+KDSkillHub CLI 是一个用于管理 Kingdee Skillhub 商店技能的命令行工具，支持搜索、安装、更新和卸载技能，并可按 IDE/工具类型分发安装目录。
 
 ## 特性
 
