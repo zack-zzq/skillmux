@@ -13,7 +13,7 @@ from rich import box
 
 from skillhub.core.api_client import SkillAPIClient
 from skillhub.core.storage import SkillStorage
-from skillhub.core.config import ALL_IDES, get_ide_install_check_path, get_ide_skills_path
+from skillhub.core.config import get_enabled_ides, get_ide_install_check_path, get_ide_skills_path
 from skillhub.utils.console import success, error, info
 from skillhub.utils.reference import refresh_command_reference
 
@@ -50,7 +50,8 @@ def update(
         # 收集所有存在的 IDE/工具 的 storage
         ide_storages: List[Tuple[str, SkillStorage]] = []
         skipped_ides: List[str] = []
-        for ide in ALL_IDES:
+        enabled_ides = get_enabled_ides(ctx.obj["config"])
+        for ide in enabled_ides:
             check_path = get_ide_install_check_path(ide)
             if not check_path.exists():
                 skipped_ides.append(ide)
@@ -58,7 +59,7 @@ def update(
             ide_storages.append((ide, SkillStorage(get_ide_skills_path(ide))))
 
         if not ide_storages:
-            error("未检测到 qoder / qoderwork / kiro / workbuddy 任一可更新目标")
+            error(f"未检测到可更新目标（已启用: {', '.join(enabled_ides)}）")
             raise click.Abort()
 
         if skipped_ides and not output_json and not check_only:

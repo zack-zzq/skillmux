@@ -11,8 +11,9 @@ requires-python = ">=3.8.1"
 license = { text = "MIT" }
 authors = [
     { name = "Kingdee AI Team", email = "ai@kingdee.com" },
+    { name = "Zack Zhu", email = "njziqi_zhu@kingdee.com" },
 ]
-keywords = ["skillhub", "qoder", "skill", "cli", "ai"]
+keywords = ["skillhub", "qoder", "codex", "skill", "cli", "ai"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -23,6 +24,8 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
 ]
 dependencies = [
     "click>=8.0.0",

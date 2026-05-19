@@ -19,6 +19,7 @@ def config_list(ctx: click.Context) -> None:
     info("当前配置:")
     click.echo(f"  api.endpoint = {cfg.get('api.endpoint')}")
     click.echo(f"  storage.path = {cfg.get('storage.path')}")
+    click.echo(f"  install.targets = {cfg.get('install.targets')}")
 
 
 @config.command(name="get")
@@ -41,6 +42,21 @@ def config_get(ctx: click.Context, key: str) -> None:
 def config_set(ctx: click.Context, key: str, value: str) -> None:
     """设置配置项"""
     cfg = ctx.obj["config"]
-    cfg.set(key, value)
+    if key == "install.targets":
+        cfg.set(key, [v.strip().lower() for v in value.split(",") if v.strip()])
+    else:
+        cfg.set(key, value)
     cfg.save()
     success(f"已设置 {key} = {value}")
+
+
+@config.command(name="targets")
+@click.argument("targets")
+@click.pass_context
+def config_targets(ctx: click.Context, targets: str) -> None:
+    """配置安装目标，例如: codex,qoder,qoderwork"""
+    cfg = ctx.obj["config"]
+    values = [v.strip().lower() for v in targets.split(",") if v.strip()]
+    cfg.set("install.targets", values)
+    cfg.save()
+    success(f"已更新 install.targets = {values}")

@@ -53,11 +53,26 @@ def get_default_storage_path() -> str:
 
 
 # 安装时需要同时写入的所有 IDE / 工具
-ALL_IDES = ("qoder", "qoderwork", "kiro", "workbuddy")
+ALL_IDES = ("qoder", "qoderwork", "kiro", "workbuddy", "codex")
+
+
+def _normalize_ides(raw_value: Any) -> list:
+    """将配置中的安装目标规范化为 IDE 列表。"""
+    if raw_value is None:
+        return []
+    if isinstance(raw_value, str):
+        parts = [v.strip().lower() for v in raw_value.split(",") if v.strip()]
+    elif isinstance(raw_value, list):
+        parts = [str(v).strip().lower() for v in raw_value if str(v).strip()]
+    else:
+        return []
+    return [v for v in parts if v in ALL_IDES]
 
 
 def get_ide_skills_path(ide: str) -> str:
     """获取指定 IDE / 工具的 skills 目录路径"""
+    if ide == "codex":
+        return str(Path.home() / ".codex" / "skills")
     return str(Path.home() / f".{ide}" / "skills")
 
 
@@ -70,15 +85,24 @@ def get_ide_install_check_path(ide: str) -> Path:
     """
     if ide == "workbuddy":
         return Path.home() / ".workbuddy" / "skills"
+    if ide == "codex":
+        return Path.home() / ".codex" / "skills"
     return Path.home() / f".{ide}"
 
 
-def get_all_storage_paths() -> list:
+def get_enabled_ides(cfg: "Config") -> list:
+    """返回当前配置启用的安装目标。"""
+    configured = _normalize_ides(cfg.get("install.targets"))
+    return configured or list(ALL_IDES)
+
+
+def get_all_storage_paths(cfg: Optional["Config"] = None) -> list:
     """返回需要同时安装的所有 IDE / 工具的 skills 目录
 
     用于 install 命令：一次性把技能写入 qoder / qoderwork / kiro / workbuddy 四个位置。
     """
-    return [get_ide_skills_path(ide) for ide in ALL_IDES]
+    ides = get_enabled_ides(cfg) if cfg else list(ALL_IDES)
+    return [get_ide_skills_path(ide) for ide in ides]
 
 
 class Config:
@@ -91,6 +115,9 @@ class Config:
         },
         "storage": {
             "path": None  # 动态计算
+        },
+        "install": {
+            "targets": list(ALL_IDES)
         }
     }
     
