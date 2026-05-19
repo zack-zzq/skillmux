@@ -11,7 +11,7 @@ from rich.console import Console
 
 from skillhub.core.api_client import SkillAPIClient
 from skillhub.core.storage import SkillStorage
-from skillhub.core.config import get_all_storage_paths, get_ide_install_check_path, ALL_IDES
+from skillhub.core.config import get_all_storage_paths, get_ide_install_check_path, get_enabled_ides
 from skillhub.utils.console import success, error, info, create_skill_table, truncate_desc
 
 
@@ -57,7 +57,8 @@ def install(
         #   - workbuddy：检查 ~/.workbuddy/skills 目录
         storages = []
         skipped_ides = []
-        for ide, path in zip(ALL_IDES, get_all_storage_paths()):
+        enabled_ides = get_enabled_ides(cfg)
+        for ide, path in zip(enabled_ides, get_all_storage_paths(cfg)):
             check_path = get_ide_install_check_path(ide)
             if not check_path.exists():
                 skipped_ides.append(ide)
@@ -68,7 +69,7 @@ def install(
             info(f"检测到以下 IDE/工具 未安装，已跳过: {', '.join(skipped_ides)}")
 
         if not storages:
-            error("未检测到 qoder / qoderwork / kiro / workbuddy 任一可安装目标")
+            error(f"未检测到可安装目标（已启用: {', '.join(enabled_ides)}）")
             if output_json:
                 click.echo(json_lib.dumps({
                     "action": "no_target",
