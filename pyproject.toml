@@ -3,9 +3,9 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "skillhub-cli"
-version = "1.0.0"
-description = "Skillhub - Skill 管理工具"
+name = "kdskillhub-zack"
+version = "1.0.1"
+description = "KDSkillHub Cli 重新实现"
 readme = "README.md"
 requires-python = ">=3.8.1"
 license = { text = "MIT" }
