@@ -2,6 +2,7 @@
 import click
 
 from skillhub.core.storage import SkillStorage
+from skillhub.core.config import get_all_storage_paths, get_enabled_ides
 from skillhub.utils.console import success, error, info
 
 
@@ -22,10 +23,14 @@ def remove(
     """
     try:
         cfg = ctx.obj["config"]
-        storage = SkillStorage(cfg.get("storage.path"))
-        
-        # 检查是否已安装
-        if not storage.is_installed(skill_name):
+        enabled_ides = get_enabled_ides(cfg)
+        storages = [
+            (ide, SkillStorage(path))
+            for ide, path in zip(enabled_ides, get_all_storage_paths(cfg))
+        ]
+
+        installed_targets = [ide for ide, storage in storages if storage.is_installed(skill_name)]
+        if not installed_targets:
             error(f"Skill 未安装: {skill_name}")
             raise click.Abort()
         
@@ -35,8 +40,10 @@ def remove(
         
         # 执行卸载
         info(f"正在卸载 {skill_name}...")
-        storage.remove_skill(skill_name)
-        success(f"✓ {skill_name} 已卸载")
+        for _, storage in storages:
+            if storage.is_installed(skill_name):
+                storage.remove_skill(skill_name)
+        success(f"✓ {skill_name} 已卸载（目标: {', '.join(installed_targets)}）")
             
     except Exception as e:
         if ctx.obj.get("verbose"):

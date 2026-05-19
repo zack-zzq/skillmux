@@ -112,9 +112,6 @@ class Config:
             "endpoint": "https://skills.kingdee.com/api",
             "timeout": 30
         },
-        "storage": {
-            "path": None  # 动态计算
-        },
         "install": {
             "targets": list(ALL_IDES)
         }
@@ -134,7 +131,6 @@ class Config:
     def _load(self) -> None:
         """加载配置"""
         self._config = self._deep_copy(self.DEFAULT_CONFIG)
-        self._config["storage"]["path"] = get_default_storage_path()
         
         if self.config_path.exists():
             try:

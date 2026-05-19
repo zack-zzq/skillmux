@@ -90,9 +90,6 @@ api:
   endpoint: https://skills.kingdee.com/api
   timeout: 30
 
-storage:
-  path: ~/.kdskillhub/skills
-
 install:
   targets:
     - codex
