@@ -18,7 +18,6 @@ def config_list(ctx: click.Context) -> None:
     
     info("当前配置:")
     click.echo(f"  api.endpoint = {cfg.get('api.endpoint')}")
-    click.echo(f"  storage.path = {cfg.get('storage.path')}")
     click.echo(f"  install.targets = {cfg.get('install.targets')}")
 
 
