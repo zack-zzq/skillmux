@@ -47,9 +47,8 @@ def detect_ide() -> str:
 
 
 def get_default_storage_path() -> str:
-    """根据 IDE 环境返回默认 skills 存储路径"""
-    ide = detect_ide()
-    return str(Path.home() / f".{ide}" / "skills")
+    """返回项目自身默认 skills 存储路径"""
+    return str(Path.home() / ".kdskillhub" / "skills")
 
 
 # 安装时需要同时写入的所有 IDE / 工具
