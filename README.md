@@ -91,7 +91,7 @@ api:
   timeout: 30
 
 storage:
-  path: ~/.qoderwork/skills
+  path: ~/.kdskillhub/skills
 
 install:
   targets:
