@@ -5,6 +5,7 @@ from rich.console import Console
 
 from skillhub.core.storage import SkillStorage
 from skillhub.core.api_client import SkillAPIClient
+from skillhub.core.config import get_enabled_ides, get_ide_install_check_path, get_ide_skills_path
 from skillhub.utils.console import create_skill_table, truncate_desc
 from skillhub.utils.reference import refresh_command_reference
 
@@ -15,12 +16,34 @@ from skillhub.utils.reference import refresh_command_reference
 def list(ctx: click.Context, output_json: bool) -> None:
     """列出已安装的 Skill"""
     cfg = ctx.obj["config"]
-    storage = SkillStorage(cfg.get("storage.path"))
     api_endpoint = ctx.obj.get("api_endpoint") or cfg.get("api.endpoint")
     api = SkillAPIClient(api_endpoint)
 
     try:
-        skills = storage.list_installed_skills()
+        skills = []
+
+        enabled_ides = get_enabled_ides(cfg)
+        for ide in enabled_ides:
+            check_path = get_ide_install_check_path(ide)
+            if not check_path.exists():
+                continue
+            ide_storage = SkillStorage(get_ide_skills_path(ide))
+            for skill in ide_storage.list_installed_skills():
+                skill_item = dict(skill)
+                skill_item["_installed_in"] = ide
+                skills.append(skill_item)
+
+        # 按 skill name 去重，优先保留先扫描到的条目
+        deduped_skills = []
+        seen_names = set()
+        for skill in skills:
+            name = skill.get("name")
+            if not name or name in seen_names:
+                continue
+            deduped_skills.append(skill)
+            seen_names.add(name)
+
+        skills = deduped_skills
 
         if not skills:
             if output_json:
