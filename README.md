@@ -42,7 +42,7 @@ kdskillhub update --all
 kdskillhub remove pdf-processing
 ```
 
-## 配置安装目标（含 Codex）
+## 配置安装目标
 
 可通过配置项选择技能分发到哪些安装目录：
 
@@ -58,7 +58,7 @@ kdskillhub config list
 ```
 
 默认支持的目标包括：
-- `codex` → `~/.codex/skills`（Windows 对应 `C:\Users\<用户名>\.codex\skills`）
+- `codex` → `~/.codex/skills`
 - `qoder` → `~/.qoder/skills`
 - `qoderwork` → `~/.qoderwork/skills`
 - `kiro` → `~/.kiro/skills`
