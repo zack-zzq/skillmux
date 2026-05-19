@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "skillhub-cli"
-version = "0.1.0"
-description = "Skillhub - QoderWork Skill 管理工具"
+version = "1.0.0"
+description = "Skillhub - Skill 管理工具"
 readme = "README.md"
 requires-python = ">=3.8.1"
 license = { text = "MIT" }
@@ -49,7 +49,7 @@ package = true
 
 [project.urls]
 Homepage = "https://skills.kingdee.com"
-Repository = "https://github.com/kingdee/skillhub-cli"
+Repository = "https://github.com/zack-zzq/skillhub-cli"
 
 [project.scripts]
 kdskillhub = "skillhub.cli:cli"

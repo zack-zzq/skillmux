@@ -4,14 +4,12 @@ Skillhub CLI 是一个用于管理 Skillhub 商店技能的命令行工具，支
 
 ## 特性
 
-- ✅ 无需登录即可使用
 - 🔍 搜索远端 Skill
 - 📦 安装 Skill（支持多目标安装）
 - 📋 列出本地已安装 Skill
 - 🔄 更新 Skill（支持 `--all` 一键更新全部已安装 Skill）
 - 🗑️ 卸载 Skill
 - ⚙️ 可配置安装目标（如 `codex`、`qoder`、`qoderwork`、`kiro`、`workbuddy`）
-- 🚀 提供 GitHub Actions 工作流用于构建并发布到 PyPI
 
 ## 安装
 
@@ -101,12 +99,6 @@ install:
     - qoder
     - qoderwork
 ```
-
-## CI/CD（GitHub Actions）
-
-仓库包含 `publish.yml` 工作流：
-- 在推送 `v*` 标签时自动构建并发布到 PyPI
-- 支持手动触发（workflow_dispatch）
 
 ## Development with uv
 
