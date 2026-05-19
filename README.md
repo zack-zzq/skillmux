@@ -14,7 +14,7 @@ Skillhub CLI 是一个用于管理 Skillhub 商店技能的命令行工具，支
 ## 安装
 
 ```bash
-pip install skillhub-cli
+pip install kdskillhub-zack
 ```
 
 ## 快速开始
