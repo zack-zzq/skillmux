@@ -1,65 +1,26 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["maturin>=1.7,<2"]
+build-backend = "maturin"
 
 [project]
 name = "kdskillhub-zack"
 version = "1.0.3"
-description = "KDSkillHub Cli 重新实现"
+description = "KDSkillHub CLI (Rust core)"
 readme = "README.md"
-requires-python = ">=3.8.1"
+requires-python = ">=3.8"
 license = { text = "MIT" }
-authors = [
-    { name = "Kingdee AI Team", email = "ai@kingdee.com" },
-    { name = "Zack Zhu", email = "njziqi_zhu@kingdee.com" },
-]
-keywords = ["skillhub", "qoder", "codex", "skill", "cli", "ai"]
+authors = [{ name = "Kingdee AI Team" }, { name = "Zack Zhu" }]
 classifiers = [
-    "Development Status :: 3 - Alpha",
-    "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
-    "Programming Language :: Python :: 3.13",
-    "Programming Language :: Python :: 3.14",
+  "Programming Language :: Rust",
+  "Programming Language :: Python :: Implementation :: CPython",
 ]
-dependencies = [
-    "click>=8.0.0",
-    "requests>=2.28.0",
-    "pyyaml>=6.0",
-    "rich>=13.0.0",
-    "keyring>=24.0.0",
-]
-
-[dependency-groups]
-dev = [
-    "pytest>=7.0.0",
-    "pytest-cov>=4.0.0",
-    "black>=23.0.0",
-    "isort>=5.12.0",
-    "flake8>=6.0.0",
-]
-
-[tool.uv]
-package = true
 
 [project.urls]
 Homepage = "https://skills.kingdee.com"
 Repository = "https://github.com/zack-zzq/skillhub-cli"
 
-[project.scripts]
-kdskillhub = "skillhub.cli:cli"
-
-[tool.setuptools.packages.find]
-include = ["skillhub*"]
-
-[tool.black]
-line-length = 88
-target-version = ["py38"]
-
-[tool.isort]
-profile = "black"
+[tool.maturin]
+bindings = "bin"
+manifest-path = "Cargo.toml"
+strip = true
+sdist-generator = "cargo"
