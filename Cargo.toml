@@ -1,0 +1,25 @@
+[package]
+name = "kdskillhub"
+version = "1.0.3"
+edition = "2021"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+comfy-table = "7"
+directories = "5"
+reqwest = { version = "0.12", features = ["blocking", "json", "rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+thiserror = "1"
+zip = "2"
+walkdir = "2"
+tempfile = "3"
+
+[build-dependencies]
+anyhow = "1"
+
+[[bin]]
+name = "kdskillhub"
+path = "src/main.rs"
