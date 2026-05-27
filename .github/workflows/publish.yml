@@ -65,10 +65,11 @@ jobs:
           args: --release --out dist --bindings bin --compatibility pypi
           before-script-linux: |
             if command -v yum >/dev/null 2>&1; then
-              yum install -y perl-IPC-Cmd
+              yum install -y perl-core
             elif command -v dnf >/dev/null 2>&1; then
-              dnf install -y perl-IPC-Cmd
+              dnf install -y perl-core
             fi
+            perl -MIPC::Cmd -MTime::Piece -e 'print "Perl OpenSSL build deps OK\n"'
         env:
           KDSKILLHUB_DEFAULT_TOKEN: ${{ secrets.KDSKILLHUB_DEFAULT_TOKEN }}
 
