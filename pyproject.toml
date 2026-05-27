@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "kdskillhub-zack"
-version = "2.0.3"
+version = "2.0.4"
 description = "KDSkillHub CLI (Rust core)"
 readme = "README.md"
 requires-python = ">=3.8"
