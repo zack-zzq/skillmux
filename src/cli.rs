@@ -2,8 +2,6 @@ use crate::{api::ApiClient, commands, config::Config, sources::clawhub::ClawHubS
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 
-include!(concat!(env!("OUT_DIR"), "/generated_skills.rs"));
-
 #[derive(Parser)]
 #[command(
     name = "skillmux",
@@ -88,42 +86,5 @@ pub fn run() -> Result<()> {
     let api = ApiClient::new(endpoint, cfg.api.timeout, token)?;
     let claw = ClawHubSource::new(None, cfg.api.timeout)?;
     let source = cli.source.unwrap_or_else(|| cfg.source.default.clone());
-    ensure_builtin_skills(&cfg)?;
     commands::dispatch(cli.command, &mut cfg, &api, &claw, &source)
-}
-
-fn ensure_builtin_skills(cfg: &Config) -> Result<()> {
-    use std::{fs, io::Write};
-    let marker = directories::BaseDirs::new()
-        .unwrap()
-        .home_dir()
-        .join(".config/skillhub/.skillmux_bootstrap_done");
-    if marker.exists() {
-        return Ok(());
-    }
-    if BUNDLED_SKILLS.is_empty() {
-        return Ok(());
-    }
-
-    for t in &cfg.install.targets {
-        let dst = crate::config::target_skill_dir(t);
-        fs::create_dir_all(&dst)?;
-
-        for (rel, content) in BUNDLED_SKILLS {
-            let to = dst.join(rel);
-            if to.exists() {
-                continue;
-            }
-            if let Some(parent) = to.parent() {
-                fs::create_dir_all(parent)?;
-            }
-            let mut file = fs::File::create(&to)?;
-            file.write_all(content)?;
-        }
-    }
-    if let Some(p) = marker.parent() {
-        fs::create_dir_all(p)?;
-    }
-    fs::write(marker, b"ok")?;
-    Ok(())
 }
