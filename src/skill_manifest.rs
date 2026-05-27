@@ -1,10 +1,19 @@
 use anyhow::{anyhow, Result};
+use serde::Deserialize;
 
 #[derive(Debug, Clone)]
 pub struct SkillManifest {
     pub name: String,
-    #[allow(dead_code)]
     pub description: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawSkillManifest {
+    #[serde(default)]
+    name: Option<String>,
+
+    #[serde(default)]
+    description: Option<String>,
 }
 
 pub fn parse_skill_md(content: &str) -> Result<SkillManifest> {
@@ -13,42 +22,21 @@ pub fn parse_skill_md(content: &str) -> Result<SkillManifest> {
     let frontmatter = extract_frontmatter(&normalized)
         .ok_or_else(|| anyhow!("SKILL.md must contain frontmatter"))?;
 
-    let mut name = None;
-    let mut description = None;
+    let raw: RawSkillManifest = serde_yaml::from_str(frontmatter)
+        .map_err(|e| anyhow!("invalid SKILL.md frontmatter: {e}"))?;
 
-    for line in frontmatter.lines() {
-        let line = line.trim();
+    let name = raw
+        .name
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| anyhow!("frontmatter name is required"))?;
 
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
+    let description = raw
+        .description
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
 
-        if let Some((key, value)) = line.split_once(':') {
-            let value = value
-                .trim()
-                .trim_matches('"')
-                .trim_matches('\'');
-
-            match key.trim() {
-                "name" => {
-                    if !value.is_empty() {
-                        name = Some(value.to_string());
-                    }
-                }
-                "description" => {
-                    if !value.is_empty() {
-                        description = Some(value.to_string());
-                    }
-                }
-                _ => {}
-            }
-        }
-    }
-
-    Ok(SkillManifest {
-        name: name.ok_or_else(|| anyhow!("frontmatter name is required"))?,
-        description,
-    })
+    Ok(SkillManifest { name, description })
 }
 
 fn normalize_markdown(content: &str) -> String {
@@ -59,27 +47,27 @@ fn normalize_markdown(content: &str) -> String {
 }
 
 fn extract_frontmatter(content: &str) -> Option<&str> {
-    let mut lines = content.lines();
+    let content = content.trim_start();
 
-    let first = lines.next()?.trim();
-    if first != "---" {
+    let mut offset = 0;
+    let mut lines = content.split_inclusive('\n');
+
+    let first = lines.next()?;
+    if first.trim() != "---" {
         return None;
     }
 
-    let start = content.find('\n')? + 1;
-    let rest = &content[start..];
+    offset += first.len();
+    let body_start = offset;
 
-    for (idx, line) in rest.lines().enumerate() {
+    for line in lines {
+        let line_start = offset;
+
         if line.trim() == "---" {
-            let mut byte_end = 0;
-
-            for prior_line in rest.lines().take(idx) {
-                byte_end += prior_line.len();
-                byte_end += 1;
-            }
-
-            return Some(&rest[..byte_end]);
+            return Some(&content[body_start..line_start]);
         }
+
+        offset += line.len();
     }
 
     None
@@ -123,6 +111,24 @@ mod tests {
 
         assert_eq!(manifest.name, "demo");
         assert_eq!(manifest.description.as_deref(), Some("test skill"));
+    }
+
+    #[test]
+    fn parse_description_with_colon() {
+        let content = "---\nname: demo\ndescription: \"foo: bar: baz\"\n---\n";
+        let manifest = parse_skill_md(content).expect("parse");
+
+        assert_eq!(manifest.name, "demo");
+        assert_eq!(manifest.description.as_deref(), Some("foo: bar: baz"));
+    }
+
+    #[test]
+    fn parse_multiline_description() {
+        let content = "---\nname: demo\ndescription: |\n  line one\n  line two\n---\n";
+        let manifest = parse_skill_md(content).expect("parse");
+
+        assert_eq!(manifest.name, "demo");
+        assert_eq!(manifest.description.as_deref(), Some("line one\nline two"));
     }
 
     #[test]

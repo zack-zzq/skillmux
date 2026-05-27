@@ -34,24 +34,28 @@ impl ClawHubSource {
             .send()?;
 
         let resp = ensure_success(resp, "clawhub api")?;
+
         Ok(resp.json()?)
     }
 
     fn map_skill(&self, v: &Value) -> RemoteSkill {
-        let slug = v
-            .get("slug")
-            .and_then(|x| x.as_str())
-            .unwrap_or_default()
-            .to_string();
+        let slug = first_string(v, &["slug", "id", "key"]).unwrap_or_default();
 
-        let name = v
-            .get("name")
-            .or_else(|| v.get("displayName"))
-            .and_then(|x| x.as_str())
-            .unwrap_or(slug.as_str())
-            .to_string();
+        let name = first_string(v, &["name", "displayName", "display_name", "title"])
+            .or_else(|| {
+                v.get("skill")
+                    .and_then(|skill| first_string(skill, &["name", "displayName", "title"]))
+            })
+            .unwrap_or_else(|| slug.clone());
 
         let version = extract_version(v);
+
+        let description = first_string(v, &["description", "summary", "shortDescription"])
+            .or_else(|| {
+                v.get("skill").and_then(|skill| {
+                    first_string(skill, &["description", "summary", "shortDescription"])
+                })
+            });
 
         RemoteSkill {
             name,
@@ -59,11 +63,7 @@ impl ClawHubSource {
             version,
             canonical_url: Some(format!("{}/skills/{}", self.base, slug)),
             source: "clawhub".into(),
-            description: v
-                .get("description")
-                .or_else(|| v.get("summary"))
-                .and_then(|x| x.as_str())
-                .map(|s| s.to_string()),
+            description,
             meta: v.clone(),
         }
     }
@@ -98,6 +98,7 @@ impl SkillSource for ClawHubSource {
 
     fn resolve(&self, slug: &str) -> Result<RemoteSkill> {
         let v = self.get_json(&format!("/api/v1/skills/{slug}"), &[])?;
+
         Ok(self.map_skill(v.get("data").unwrap_or(&v)))
     }
 
@@ -183,27 +184,30 @@ impl SkillSource for ClawHubSource {
     }
 }
 
+fn first_string(v: &Value, keys: &[&str]) -> Option<String> {
+    keys.iter()
+        .find_map(|key| v.get(*key).and_then(|x| x.as_str()))
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
 fn extract_version(v: &Value) -> Option<String> {
-    v.get("version")
-        .or_else(|| v.get("tag"))
-        .and_then(|x| x.as_str())
-        .map(|s| s.to_string())
+    first_string(v, &["version", "tag"])
         .or_else(|| {
             v.get("latestVersion")
-                .and_then(|x| x.as_str())
-                .map(|s| s.to_string())
-        })
-        .or_else(|| {
-            v.get("latestVersion")
-                .and_then(|x| x.get("version"))
-                .and_then(|x| x.as_str())
-                .map(|s| s.to_string())
+                .and_then(|x| {
+                    x.as_str()
+                        .map(|s| s.to_string())
+                        .or_else(|| first_string(x, &["version", "tag", "name"]))
+                })
         })
         .or_else(|| {
             v.get("latest")
-                .and_then(|x| x.get("version"))
-                .and_then(|x| x.as_str())
-                .map(|s| s.to_string())
+                .and_then(|x| {
+                    x.as_str()
+                        .map(|s| s.to_string())
+                        .or_else(|| first_string(x, &["version", "tag", "name"]))
+                })
         })
 }
 
@@ -272,6 +276,7 @@ fn preview_bytes(bytes: &[u8], max_len: usize) -> String {
 
     let take = bytes.len().min(max_len);
     let text = String::from_utf8_lossy(&bytes[..take]);
+
     preview_text(&text, max_len)
 }
 
@@ -342,5 +347,26 @@ mod tests {
         assert!(looks_like_zip(b"PK\x05\x06abc"));
         assert!(looks_like_zip(b"PK\x07\x08abc"));
         assert!(!looks_like_zip(b"not a zip"));
+    }
+
+    #[test]
+    fn map_skill_accepts_display_name_and_summary() {
+        let source = ClawHubSource::new(None, 30).expect("source");
+
+        let value = serde_json::json!({
+            "slug": "resume-assistant",
+            "displayName": "Resume Assistant",
+            "summary": "Help polish resumes",
+            "latestVersion": {
+                "version": "1.0.6"
+            }
+        });
+
+        let skill = source.map_skill(&value);
+
+        assert_eq!(skill.slug, "resume-assistant");
+        assert_eq!(skill.name, "Resume Assistant");
+        assert_eq!(skill.description.as_deref(), Some("Help polish resumes"));
+        assert_eq!(skill.version.as_deref(), Some("1.0.6"));
     }
 }
