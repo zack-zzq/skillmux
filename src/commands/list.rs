@@ -3,6 +3,9 @@ use crate::{
     storage::SkillStorage,
 };
 use anyhow::Result;
+use comfy_table::{
+    modifiers::UTF8_ROUND_CORNERS, presets::UTF8_FULL, Cell, ContentArrangement, Table,
+};
 
 pub fn run(cfg: &Config, json: bool) -> Result<()> {
     let mut rows = vec![];
@@ -28,16 +31,28 @@ pub fn run(cfg: &Config, json: bool) -> Result<()> {
     if json {
         println!("{}", serde_json::to_string_pretty(&rows)?);
     } else {
+        let mut table = Table::new();
+        table
+            .load_preset(UTF8_FULL)
+            .apply_modifier(UTF8_ROUND_CORNERS)
+            .set_content_arrangement(ContentArrangement::Dynamic);
+        table.set_header(vec!["Target", "Name", "Source", "Version", "Description"]);
         for r in rows {
-            println!(
-                "{:<10} {:<24} {:<10} {:<12} {}",
-                r["target"],
-                r["name"],
-                r["source"],
-                r["version"],
-                r["description"].as_str().unwrap_or("")
-            );
+            let desc = r["description"].as_str().unwrap_or("");
+            let clipped = if desc.chars().count() > 80 {
+                format!("{}...", desc.chars().take(77).collect::<String>())
+            } else {
+                desc.to_string()
+            };
+            table.add_row(vec![
+                Cell::new(r["target"].as_str().unwrap_or_default()),
+                Cell::new(r["name"].as_str().unwrap_or_default()),
+                Cell::new(r["source"].as_str().unwrap_or_default()),
+                Cell::new(r["version"].as_str().unwrap_or_default()),
+                Cell::new(clipped),
+            ]);
         }
+        println!("{table}");
     }
     Ok(())
 }

@@ -19,5 +19,6 @@ pub fn run(cfg: &Config, skill: &str, purge: bool) -> Result<()> {
             std::fs::remove_dir_all(c)?;
         }
     }
+    println!("Removed skill: {skill}");
     Ok(())
 }

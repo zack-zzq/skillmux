@@ -3,6 +3,7 @@ use anyhow::{anyhow, Result};
 #[derive(Debug, Clone)]
 pub struct SkillManifest {
     pub name: String,
+    #[allow(dead_code)]
     pub description: Option<String>,
 }
 

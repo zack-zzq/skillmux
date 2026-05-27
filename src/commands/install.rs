@@ -11,6 +11,7 @@ use directories::BaseDirs;
 use std::{
     fs,
     io::{self, Write},
+    path::{Path, PathBuf},
 };
 
 pub fn parse_skill_identifier(v: &str) -> (Option<String>, String, Option<String>) {
@@ -91,10 +92,95 @@ pub fn run(
     let zip = s.download(&slug, Some(&v))?;
     let tmp = tempfile::tempdir()?;
     zip::ZipArchive::new(std::io::Cursor::new(zip))?.extract(tmp.path())?;
+    let skill_root = resolve_skill_root(tmp.path())?;
     for t in &cfg.install.targets {
         let st = SkillStorage::new(target_skill_dir(t));
-        installer::install_dir_copy(tmp.path(), &st.skill_path(&slug))?;
+        let dst = st.skill_path(&slug);
+        installer::install_dir_copy(&skill_root, &dst)?;
+        if !dst.join("SKILL.md").exists() {
+            if dst.exists() {
+                fs::remove_dir_all(&dst)?;
+            }
+            return Err(anyhow!(
+                "install verification failed: SKILL.md missing in {}",
+                dst.display()
+            ));
+        }
         st.save_info(&slug,&serde_json::json!({"source":{"type":src,"description":resolved.description},"name":resolved.name,"version":v,"slug":slug,"canonical_url":resolved.canonical_url}))?;
+        if !json {
+            println!("Installed {slug} -> {t}");
+        }
     }
     Ok(())
+}
+
+fn resolve_skill_root(extract_root: &Path) -> Result<PathBuf> {
+    if extract_root.join("SKILL.md").exists() {
+        return Ok(extract_root.to_path_buf());
+    }
+    let top_dirs: Vec<_> = fs::read_dir(extract_root)?
+        .flatten()
+        .filter(|e| e.path().is_dir())
+        .collect();
+    if top_dirs.len() == 1 {
+        let p = top_dirs[0].path();
+        if p.join("SKILL.md").exists() {
+            return Ok(p);
+        }
+    }
+    let mut candidates = Vec::new();
+    for entry in walkdir::WalkDir::new(extract_root).into_iter().flatten() {
+        if entry.file_type().is_file() && entry.file_name() == "SKILL.md" {
+            if let Some(parent) = entry.path().parent() {
+                candidates.push(parent.to_path_buf());
+            }
+        }
+    }
+    candidates.sort();
+    candidates.dedup();
+    match candidates.len() {
+        1 => Ok(candidates.remove(0)),
+        0 => Err(anyhow!("SKILL.md not found in downloaded archive")),
+        _ => Err(anyhow!(
+            "multiple SKILL.md candidates found in downloaded archive"
+        )),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_skill_root;
+    use std::{fs, io::Write};
+
+    #[test]
+    fn resolve_github_style_single_top_dir() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let repo_root = tmp.path().join("demo-main");
+        fs::create_dir_all(&repo_root).expect("mkdir");
+        fs::write(repo_root.join("SKILL.md"), "# demo").expect("write skill");
+        fs::write(repo_root.join("README.md"), "readme").expect("write readme");
+
+        let out = tempfile::tempdir().expect("out");
+        let zip_path = out.path().join("skill.zip");
+        let f = fs::File::create(&zip_path).expect("zip create");
+        let mut zip = zip::ZipWriter::new(f);
+        let options = zip::write::SimpleFileOptions::default();
+        zip.add_directory("demo-main/", options).expect("add dir");
+        zip.start_file("demo-main/SKILL.md", options)
+            .expect("start");
+        zip.write_all(b"# demo").expect("write");
+        zip.finish().expect("finish");
+
+        let extract = tempfile::tempdir().expect("extract");
+        let bytes = fs::read(&zip_path).expect("read zip");
+        zip::ZipArchive::new(std::io::Cursor::new(bytes))
+            .expect("archive")
+            .extract(extract.path())
+            .expect("extract");
+
+        let root = resolve_skill_root(extract.path()).expect("root");
+        assert!(root.join("SKILL.md").exists());
+        assert!(!extract.path().join("SKILL.md").exists());
+        assert_eq!(root.file_name().and_then(|s| s.to_str()), Some("demo-main"));
+    }
 }

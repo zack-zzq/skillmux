@@ -73,9 +73,17 @@ pub enum Cmd {
 #[derive(Subcommand)]
 pub enum ConfigCmd {
     List,
-    Get { key: String },
-    Set { key: String, value: String },
-    Targets { targets: String },
+    Get {
+        key: String,
+    },
+    Set {
+        key: String,
+        value: String,
+    },
+    Targets {
+        #[arg(value_delimiter = ',', num_args = 0..)]
+        targets: Vec<String>,
+    },
 }
 
 pub fn run() -> Result<()> {

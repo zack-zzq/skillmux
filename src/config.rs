@@ -1,5 +1,5 @@
 use crate::api::ApiClient;
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use directories::BaseDirs;
 use serde::{Deserialize, Serialize};
 use std::{env, fs, path::PathBuf};
@@ -95,15 +95,16 @@ impl Config {
             _ => None,
         }
     }
-    pub fn set(&mut self, key: &str, val: &str) {
+    pub fn set(&mut self, key: &str, val: &str) -> Result<()> {
         match key {
             "api.endpoint" => self.api.endpoint = val.into(),
             "api.timeout" => self.api.timeout = val.parse().unwrap_or(30),
             "api.token" => self.api.token = Some(val.into()),
             "source.default" => self.source.default = val.into(),
-            "install.targets" => self.install.targets = parse_targets(val),
+            "install.targets" => self.install.targets = parse_targets(val)?,
             _ => {}
         }
+        Ok(())
     }
     pub fn resolve_token(&self, cli_token: Option<String>) -> String {
         cli_token
@@ -122,11 +123,35 @@ fn merge(a: &mut serde_yaml::Value, b: serde_yaml::Value) {
         (a, b) => *a = b,
     }
 }
-pub fn parse_targets(v: &str) -> Vec<String> {
-    v.split(',')
-        .map(|s| s.trim().to_lowercase())
-        .filter(|s| ALL_TARGETS.contains(&s.as_str()))
-        .collect()
+pub fn parse_targets(v: &str) -> Result<Vec<String>> {
+    parse_targets_iter(v.split([',', ' ', '\t', '\n']))
+}
+
+pub fn parse_targets_args(values: &[String]) -> Result<Vec<String>> {
+    parse_targets_iter(values.iter().flat_map(|v| v.split([',', ' ', '\t', '\n'])))
+}
+
+fn parse_targets_iter<'a, I>(parts: I) -> Result<Vec<String>>
+where
+    I: IntoIterator<Item = &'a str>,
+{
+    let mut out = Vec::new();
+    for raw in parts {
+        let s = raw.trim().to_lowercase();
+        if s.is_empty() {
+            continue;
+        }
+        if !ALL_TARGETS.contains(&s.as_str()) {
+            return Err(anyhow!(
+                "invalid target '{s}', allowed targets: {}",
+                ALL_TARGETS.join(", ")
+            ));
+        }
+        if !out.contains(&s) {
+            out.push(s);
+        }
+    }
+    Ok(out)
 }
 pub fn install_check_path(t: &str) -> PathBuf {
     let h = BaseDirs::new().unwrap().home_dir().to_path_buf();
@@ -144,5 +169,35 @@ pub fn target_skill_dir(t: &str) -> PathBuf {
     match t {
         "codex" => h.join(".codex/skills"),
         _ => h.join(format!(".{t}/skills")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_targets, parse_targets_args};
+
+    #[test]
+    fn parse_targets_comma() {
+        let v = parse_targets("qoderwork,codex").expect("parse ok");
+        assert_eq!(v, vec!["qoderwork".to_string(), "codex".to_string()]);
+    }
+
+    #[test]
+    fn parse_targets_space_and_mixed_whitespace() {
+        let v = parse_targets_args(&["qoderwork codex,\tkiro".to_string()]).expect("parse ok");
+        assert_eq!(
+            v,
+            vec![
+                "qoderwork".to_string(),
+                "codex".to_string(),
+                "kiro".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_targets_invalid() {
+        let err = parse_targets("codex,badone").expect_err("must fail");
+        assert!(err.to_string().contains("allowed targets"));
     }
 }
