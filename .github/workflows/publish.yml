@@ -5,6 +5,9 @@ on:
     tags: ["v*"]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build:
     strategy:
@@ -27,10 +30,6 @@ jobs:
             target: aarch64-pc-windows-msvc
             manylinux: "off"
 
-          - os: macos-13
-            target: x86_64-apple-darwin
-            manylinux: "off"
-
           - os: macos-latest
             target: aarch64-apple-darwin
             manylinux: "off"
@@ -38,7 +37,7 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Ensure secret exists
         shell: bash
@@ -49,6 +48,12 @@ jobs:
           fi
         env:
           KDSKILLHUB_DEFAULT_TOKEN: ${{ secrets.KDSKILLHUB_DEFAULT_TOKEN }}
+
+      - name: Set Linux ARM64 CFLAGS
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        shell: bash
+        run: |
+          echo 'CFLAGS_aarch64_unknown_linux_gnu=-D__ARM_ARCH=8' >> "$GITHUB_ENV"
 
       - name: Build wheel
         uses: PyO3/maturin-action@v1
@@ -62,7 +67,7 @@ jobs:
           KDSKILLHUB_DEFAULT_TOKEN: ${{ secrets.KDSKILLHUB_DEFAULT_TOKEN }}
 
       - name: Upload wheel artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dist-${{ matrix.os }}-${{ matrix.target }}
           path: dist
@@ -71,6 +76,8 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     permissions:
+      contents: read
+      actions: read
       id-token: write
 
     steps:
