@@ -1,4 +1,7 @@
-use crate::{config::{target_skill_dir, Config}, storage::SkillStorage};
+use crate::{
+    config::{target_skill_dir, Config},
+    storage::SkillStorage,
+};
 use anyhow::Result;
 use directories::BaseDirs;
 
@@ -8,8 +11,13 @@ pub fn run(cfg: &Config, skill: &str, purge: bool) -> Result<()> {
         s.remove(skill)?;
     }
     if purge {
-        let c = BaseDirs::new().unwrap().cache_dir().join("kdskillhub/github");
-        if c.exists() { std::fs::remove_dir_all(c)?; }
+        let c = BaseDirs::new()
+            .unwrap()
+            .cache_dir()
+            .join("kdskillhub/github");
+        if c.exists() {
+            std::fs::remove_dir_all(c)?;
+        }
     }
     Ok(())
 }

@@ -1,9 +1,9 @@
 use crate::{
-    api::{extract_list, ApiClient},
-    config::{install_check_path, target_skill_dir, Config},
+    api::ApiClient,
+    config::{target_skill_dir, Config},
     git_backend::gix,
     installer, skill_manifest,
-    sources::github,
+    sources::{clawhub::ClawHubSource, github, SkillSource},
     storage::SkillStorage,
 };
 use anyhow::{anyhow, Result};
@@ -13,15 +13,22 @@ use std::{
     io::{self, Write},
 };
 
-pub fn parse_skill_identifier(v: &str) -> (String, Option<String>) {
-    v.split_once('@')
-        .map(|(a, b)| (a.into(), Some(b.into())))
-        .unwrap_or((v.into(), None))
+pub fn parse_skill_identifier(v: &str) -> (Option<String>, String, Option<String>) {
+    let (s, ver) = v
+        .split_once('@')
+        .map(|(a, b)| (a.to_string(), Some(b.to_string())))
+        .unwrap_or((v.to_string(), None));
+    if let Some((src, slug)) = s.split_once(':') {
+        (Some(src.into()), slug.into(), ver)
+    } else {
+        (None, s, ver)
+    }
 }
-
 #[allow(clippy::too_many_arguments)]
 pub fn run(
     api: &ApiClient,
+    claw: &ClawHubSource,
+    source: &str,
     cfg: &Config,
     skill: &str,
     version: Option<String>,
@@ -33,6 +40,7 @@ pub fn run(
     json: bool,
 ) -> Result<()> {
     if let Some(mut gh) = github::parse(skill) {
+        /* unchanged github */
         gh.r#ref = ref_name.unwrap_or_else(|| "HEAD".into());
         gh.subdir = subdir.clone();
         if !yes {
@@ -60,41 +68,32 @@ pub fn run(
             skill_manifest::parse_skill_md(&fs::read_to_string(src_root.join("SKILL.md"))?)?;
         let install_name = as_name.unwrap_or(manifest.name);
         for t in &cfg.install.targets {
-            if !install_check_path(t).exists() {
-                continue;
-            }
             let st = SkillStorage::new(target_skill_dir(t));
             if st.installed(&install_name) && !force {
                 continue;
             }
             installer::install_dir(&src_root, &st.skill_path(&install_name))?;
-            st.save_info(&install_name, &serde_json::json!({"name":install_name,"version":sync.commit,"target":t,"source":{"type":"github","owner":gh.owner,"repo":gh.repo,"url":gh.url,"ref":gh.r#ref,"subdir":gh.subdir,"commit":sync.commit,"backend":"gix","pinned":gh.r#ref.len()==40}}))?;
+            st.save_info(&install_name,&serde_json::json!({"name":install_name,"version":sync.commit,"slug":install_name,"source":"github"}))?;
         }
         if json {
             println!("{}", serde_json::json!({"name":install_name}));
         }
         return Ok(());
     }
-
-    let (name, ver2) = parse_skill_identifier(skill);
+    let (pref, slug, ver2) = parse_skill_identifier(skill);
+    let src = pref.unwrap_or_else(|| source.into());
     let ver = version.or(ver2);
-    let data = api.search(Some(name.clone()), 1, 20)?;
-    let one = extract_list(&data)?
-        .into_iter()
-        .find(|s| s.name == name)
-        .ok_or_else(|| anyhow!("not found"))?;
-    let v = ver
-        .or(one.current_version)
-        .or(one.version)
-        .ok_or_else(|| anyhow!("no version"))?;
-    let zip = api.download(one.id, &v)?;
+    let s: &dyn SkillSource = if src == "clawhub" { claw } else { api };
+    s.pre_install_check(&slug)?;
+    let resolved = s.resolve(&slug)?;
+    let v = ver.or(resolved.version).unwrap_or_else(|| "latest".into());
+    let zip = s.download(&slug, Some(&v))?;
     let tmp = tempfile::tempdir()?;
     zip::ZipArchive::new(std::io::Cursor::new(zip))?.extract(tmp.path())?;
-    let src_root = tmp.path();
     for t in &cfg.install.targets {
         let st = SkillStorage::new(target_skill_dir(t));
-        installer::install_dir_copy(src_root, &st.skill_path(&name))?;
-        st.save_info(&name, &serde_json::json!({"name":name,"version":v,"target":t,"source":{"type":"kingdee","id":one.id}}))?;
+        installer::install_dir_copy(tmp.path(), &st.skill_path(&slug))?;
+        st.save_info(&slug,&serde_json::json!({"source":src,"name":resolved.name,"version":v,"slug":slug,"canonical_url":resolved.canonical_url}))?;
     }
     Ok(())
 }

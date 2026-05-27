@@ -23,12 +23,21 @@ impl SkillStorage {
         let _ = fs::create_dir_all(&base);
         Self { base }
     }
-    pub fn skill_path(&self, n: &str) -> PathBuf { self.base.join(n) }
-    pub fn installed(&self, n: &str) -> bool { self.skill_path(n).join("SKILL.md").exists() }
+    pub fn skill_path(&self, n: &str) -> PathBuf {
+        self.base.join(n)
+    }
+    pub fn installed(&self, n: &str) -> bool {
+        let p = self.skill_path(n);
+        p.join("SKILL.md").exists() || p.join("skill.md").exists()
+    }
     pub fn remove(&self, n: &str) -> Result<()> {
         let p = self.skill_path(n);
         if p.exists() {
-            if p.is_symlink() { fs::remove_file(p)?; } else { fs::remove_dir_all(p)?; }
+            if p.is_symlink() {
+                fs::remove_file(p)?;
+            } else {
+                fs::remove_dir_all(p)?;
+            }
         }
         Ok(())
     }
@@ -44,6 +53,9 @@ impl SkillStorage {
         serde_json::from_slice(&b).ok()
     }
     pub fn list(&self) -> Result<Vec<String>> {
-        Ok(fs::read_dir(&self.base)?.flatten().map(|e| e.file_name().to_string_lossy().to_string()).collect())
+        Ok(fs::read_dir(&self.base)?
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .collect())
     }
 }

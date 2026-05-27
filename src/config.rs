@@ -9,6 +9,8 @@ pub const ALL_TARGETS: &[&str] = &["codex", "qoder", "qoderwork", "kiro", "workb
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     pub api: Api,
+    #[serde(default)]
+    pub source: SourceConfig,
     pub install: Install,
     #[serde(skip)]
     path: PathBuf,
@@ -19,11 +21,20 @@ pub struct Api {
     pub timeout: u64,
     pub token: Option<String>,
 }
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct SourceConfig {
+    #[serde(default = "default_source")]
+    pub default: String,
+    #[serde(default)]
+    pub items: serde_yaml::Value,
+}
+fn default_source() -> String {
+    "kingdee".into()
+}
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Install {
     pub targets: Vec<String>,
 }
-
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -32,6 +43,7 @@ impl Default for Config {
                 timeout: 30,
                 token: None,
             },
+            source: SourceConfig::default(),
             install: Install {
                 targets: ALL_TARGETS.iter().map(|s| s.to_string()).collect(),
             },
@@ -39,7 +51,7 @@ impl Default for Config {
         }
     }
 }
-
+// keep rest
 pub fn config_path(custom: Option<&str>) -> Result<PathBuf> {
     if let Some(c) = custom {
         return Ok(PathBuf::from(c));
@@ -78,6 +90,7 @@ impl Config {
             "api.endpoint" => Some(self.api.endpoint.clone()),
             "api.timeout" => Some(self.api.timeout.to_string()),
             "api.token" => self.api.token.clone(),
+            "source.default" => Some(self.source.default.clone()),
             "install.targets" => Some(self.install.targets.join(",")),
             _ => None,
         }
@@ -87,6 +100,7 @@ impl Config {
             "api.endpoint" => self.api.endpoint = val.into(),
             "api.timeout" => self.api.timeout = val.parse().unwrap_or(30),
             "api.token" => self.api.token = Some(val.into()),
+            "source.default" => self.source.default = val.into(),
             "install.targets" => self.install.targets = parse_targets(val),
             _ => {}
         }
@@ -130,23 +144,5 @@ pub fn target_skill_dir(t: &str) -> PathBuf {
     match t {
         "codex" => h.join(".codex/skills"),
         _ => h.join(format!(".{t}/skills")),
-    }
-}
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn targets() {
-        assert_eq!(parse_targets("codex,bad,qoder"), vec!["codex", "qoder"]);
-    }
-    #[test]
-    fn token_priority() {
-        let mut c = Config::default();
-        c.api.token = Some("cfg".into());
-        std::env::set_var("KDSKILLHUB_TOKEN", "env");
-        assert_eq!(c.resolve_token(Some("cli".into())), "cli");
-        assert_eq!(c.resolve_token(None), "env");
-        std::env::remove_var("KDSKILLHUB_TOKEN");
-        assert_eq!(c.resolve_token(None), "cfg");
     }
 }

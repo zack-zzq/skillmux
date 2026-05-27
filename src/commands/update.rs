@@ -2,17 +2,14 @@ use crate::{
     api::ApiClient,
     commands::install,
     config::{target_skill_dir, Config},
+    sources::clawhub::ClawHubSource,
     storage::SkillStorage,
 };
-use anyhow::{anyhow, Result};
-use serde_json::Value;
-
-fn source_type(info: &Value) -> Option<&str> {
-    info.get("type")?.as_str()
-}
+use anyhow::Result;
 
 pub fn run(
     api: &ApiClient,
+    claw: &ClawHubSource,
     cfg: &Config,
     skill: Option<String>,
     all: bool,
@@ -26,52 +23,34 @@ pub fn run(
                 continue;
             }
             if let Some(info) = s.load_info(&n) {
-                targets.push((n, info.source));
+                targets.push((
+                    n,
+                    info.source
+                        .get("source")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("kingdee")
+                        .to_string(),
+                ));
             }
         }
     }
-    targets.sort_by(|a, b| a.0.cmp(&b.0));
-    targets.dedup_by(|a, b| a.0 == b.0);
-    for (name, info) in targets {
-        match source_type(&info) {
-            Some("github") => {
-                let url = info
-                    .get("url")
-                    .and_then(|v| v.as_str())
-                    .ok_or_else(|| anyhow!("missing source.url for GitHub skill {name}"))?;
-                let subdir = info
-                    .get("subdir")
-                    .and_then(|v| v.as_str())
-                    .map(str::to_string);
-                let source_ref = ref_name
-                    .clone()
-                    .or_else(|| info.get("ref").and_then(|v| v.as_str()).map(str::to_string));
-                install::run(
-                    api,
-                    cfg,
-                    url,
-                    None,
-                    source_ref,
-                    subdir,
-                    Some(name),
-                    true,
-                    true,
-                    false,
-                )?;
-            }
-            _ => install::run(
-                api,
-                cfg,
-                &name,
-                None,
-                ref_name.clone(),
-                None,
-                None,
-                true,
-                true,
-                false,
-            )?,
-        }
+    targets.sort();
+    targets.dedup();
+    for (name, src) in targets {
+        install::run(
+            api,
+            claw,
+            &src,
+            cfg,
+            &format!("{}:{}", src, name),
+            None,
+            ref_name.clone(),
+            None,
+            None,
+            true,
+            true,
+            false,
+        )?;
     }
     Ok(())
 }
