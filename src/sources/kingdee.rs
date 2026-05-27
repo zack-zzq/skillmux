@@ -24,6 +24,7 @@ impl SkillSource for ApiClient {
                 version: s.current_version.or(s.version),
                 canonical_url: None,
                 source: "kingdee".into(),
+                description: s.description,
                 meta: serde_json::json!({"id":s.id}),
             })
             .collect())

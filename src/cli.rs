@@ -3,7 +3,11 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "kdskillhub", version)]
+#[command(
+    name = "skillmux",
+    version,
+    about = "A fast multi-source, multi-target skill manager."
+)]
 pub struct Cli {
     #[arg(short, long)]
     pub config: Option<String>,

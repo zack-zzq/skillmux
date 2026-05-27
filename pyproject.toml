@@ -3,9 +3,9 @@ requires = ["maturin>=1.7,<2"]
 build-backend = "maturin"
 
 [project]
-name = "kdskillhub-zack"
-version = "2.1.0"
-description = "KDSkillHub CLI (Rust core)"
+name = "skillmux"
+version = "3.0.0"
+description = "A fast multi-source, multi-target skill manager."
 readme = "README.md"
 requires-python = ">=3.8"
 license = { text = "MIT" }
@@ -17,7 +17,7 @@ classifiers = [
 
 [project.urls]
 Homepage = "https://skills.kingdee.com"
-Repository = "https://github.com/zack-zzq/kdskillhub"
+Repository = "https://github.com/zack-zzq/skillmux"
 
 [tool.maturin]
 bindings = "bin"

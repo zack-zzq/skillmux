@@ -14,8 +14,14 @@ pub fn run(cfg: &Config, json: bool) -> Result<()> {
                     .source
                     .get("type")
                     .and_then(|v| v.as_str())
+                    .or_else(|| info.source.as_str())
                     .unwrap_or("legacy");
-                rows.push(serde_json::json!({"target":t,"name":info.name,"source":src,"version":info.version,"commit":info.source.get("commit")}));
+                let desc = info
+                    .source
+                    .get("description")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                rows.push(serde_json::json!({"target":t,"name":info.name,"source":src,"version":info.version,"description":desc}));
             }
         }
     }
@@ -24,8 +30,12 @@ pub fn run(cfg: &Config, json: bool) -> Result<()> {
     } else {
         for r in rows {
             println!(
-                "{:<10} {:<24} {:<8} {}",
-                r["target"], r["name"], r["source"], r["version"]
+                "{:<10} {:<24} {:<10} {:<12} {}",
+                r["target"],
+                r["name"],
+                r["source"],
+                r["version"],
+                r["description"].as_str().unwrap_or("")
             );
         }
     }
