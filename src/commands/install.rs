@@ -78,6 +78,7 @@ pub fn run(
             skill_manifest::parse_skill_md(&fs::read_to_string(src_root.join("SKILL.md"))?)?;
 
         let install_name = as_name.unwrap_or_else(|| manifest.name.clone());
+        validate_install_name(&install_name)?;
 
         let description = manifest
             .description
@@ -86,6 +87,7 @@ pub fn run(
 
         let info = serde_json::json!({
             "name": install_name,
+            "display_name": manifest.name,
             "version": sync.commit,
             "slug": install_name,
             "canonical_url": gh.url,
@@ -142,13 +144,23 @@ pub fn run(
         .and_then(|content| skill_manifest::parse_skill_md(&content).ok());
 
     let install_name = as_name.unwrap_or_else(|| {
-        first_non_empty([
-            Some(resolved.name.clone()),
-            local_manifest.as_ref().map(|m| m.name.clone()),
-            Some(slug.clone()),
-        ])
-        .unwrap_or_else(|| slug.clone())
+        if src == "clawhub" {
+            slug.clone()
+        } else {
+            first_non_empty([
+                local_manifest.as_ref().map(|m| m.name.clone()),
+                Some(resolved.name.clone()),
+                Some(slug.clone()),
+            ])
+            .unwrap_or_else(|| slug.clone())
+        }
     });
+    validate_install_name(&install_name)?;
+
+    let display_name = first_non_empty([
+        Some(resolved.name.clone()),
+        local_manifest.as_ref().map(|m| m.name.clone()),
+    ]);
 
     let description = first_non_empty([
         resolved.description.clone(),
@@ -157,6 +169,7 @@ pub fn run(
 
     let info = serde_json::json!({
         "name": install_name,
+        "display_name": display_name,
         "version": v,
         "slug": slug,
         "canonical_url": resolved.canonical_url,
@@ -206,6 +219,34 @@ fn first_non_empty(values: impl IntoIterator<Item = Option<String>>) -> Option<S
         .find(|s| !s.is_empty())
 }
 
+fn validate_install_name(name: &str) -> Result<()> {
+    let trimmed = name.trim();
+
+    if trimmed.is_empty() {
+        return Err(anyhow!("skill install name cannot be empty"));
+    }
+
+    if trimmed != name {
+        return Err(anyhow!("skill install name must not have leading or trailing whitespace: {name}"));
+    }
+
+    if trimmed == "." || trimmed == ".." {
+        return Err(anyhow!("invalid skill install name: {name}"));
+    }
+
+    if trimmed.contains('/') || trimmed.contains('\\') {
+        return Err(anyhow!("skill install name must not contain path separators: {name}"));
+    }
+
+    if trimmed.chars().any(char::is_whitespace) {
+        return Err(anyhow!(
+            "skill install name must not contain whitespace: {name}; use a filesystem-safe id such as resume-assistant"
+        ));
+    }
+
+    Ok(())
+}
+
 fn resolve_skill_root(extract_root: &Path) -> Result<PathBuf> {
     if extract_root.join("SKILL.md").exists() {
         return Ok(extract_root.to_path_buf());
@@ -248,7 +289,9 @@ fn resolve_skill_root(extract_root: &Path) -> Result<PathBuf> {
 
 #[cfg(test)]
 mod tests {
-    use super::{first_non_empty, parse_skill_identifier, resolve_skill_root};
+    use super::{
+        first_non_empty, parse_skill_identifier, resolve_skill_root, validate_install_name,
+    };
     use std::{fs, io::Write};
 
     #[test]
@@ -278,6 +321,27 @@ mod tests {
         ]);
 
         assert_eq!(value.as_deref(), Some("demo"));
+    }
+
+    #[test]
+    fn validate_install_name_accepts_safe_id() {
+        validate_install_name("resume-assistant").expect("valid");
+        validate_install_name("kingdee-ppt").expect("valid");
+        validate_install_name("kdclub_ai_product_qa").expect("valid");
+    }
+
+    #[test]
+    fn validate_install_name_rejects_whitespace() {
+        assert!(validate_install_name("Resume Assistant").is_err());
+        assert!(validate_install_name(" resume-assistant").is_err());
+        assert!(validate_install_name("resume-assistant ").is_err());
+    }
+
+    #[test]
+    fn validate_install_name_rejects_path_separators() {
+        assert!(validate_install_name("../demo").is_err());
+        assert!(validate_install_name("foo/bar").is_err());
+        assert!(validate_install_name("foo\\bar").is_err());
     }
 
     #[test]
