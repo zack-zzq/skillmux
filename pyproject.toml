@@ -17,7 +17,7 @@ classifiers = [
 
 [project.urls]
 Homepage = "https://skills.kingdee.com"
-Repository = "https://github.com/zack-zzq/skillhub-cli"
+Repository = "https://github.com/zack-zzq/kdskillhub"
 
 [tool.maturin]
 bindings = "bin"
