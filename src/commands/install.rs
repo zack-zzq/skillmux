@@ -67,13 +67,14 @@ pub fn run(
         let manifest =
             skill_manifest::parse_skill_md(&fs::read_to_string(src_root.join("SKILL.md"))?)?;
         let install_name = as_name.unwrap_or(manifest.name);
+        let gh_desc = github::repo_description(&gh.owner, &gh.repo);
         for t in &cfg.install.targets {
             let st = SkillStorage::new(target_skill_dir(t));
             if st.installed(&install_name) && !force {
                 continue;
             }
             installer::install_dir(&src_root, &st.skill_path(&install_name))?;
-            st.save_info(&install_name,&serde_json::json!({"name":install_name,"version":sync.commit,"slug":install_name,"source":"github"}))?;
+            st.save_info(&install_name,&serde_json::json!({"name":install_name,"version":sync.commit,"slug":install_name,"source":{"type":"github","description":gh_desc,"owner":gh.owner,"repo":gh.repo,"ref":gh.r#ref,"commit":sync.commit}}))?;
         }
         if json {
             println!("{}", serde_json::json!({"name":install_name}));
@@ -93,7 +94,7 @@ pub fn run(
     for t in &cfg.install.targets {
         let st = SkillStorage::new(target_skill_dir(t));
         installer::install_dir_copy(tmp.path(), &st.skill_path(&slug))?;
-        st.save_info(&slug,&serde_json::json!({"source":src,"name":resolved.name,"version":v,"slug":slug,"canonical_url":resolved.canonical_url}))?;
+        st.save_info(&slug,&serde_json::json!({"source":{"type":src,"description":resolved.description},"name":resolved.name,"version":v,"slug":slug,"canonical_url":resolved.canonical_url}))?;
     }
     Ok(())
 }

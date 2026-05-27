@@ -16,6 +16,7 @@ pub struct RemoteSkill {
     pub version: Option<String>,
     pub canonical_url: Option<String>,
     pub source: String,
+    pub description: Option<String>,
     #[serde(default)]
     pub meta: serde_json::Value,
 }

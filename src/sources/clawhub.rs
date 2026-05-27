@@ -55,6 +55,10 @@ impl ClawHubSource {
             version,
             canonical_url: Some(format!("{}/skills/{}", self.base, slug)),
             source: "clawhub".into(),
+            description: v
+                .get("description")
+                .and_then(|x| x.as_str())
+                .map(|s| s.to_string()),
             meta: v.clone(),
         }
     }

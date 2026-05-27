@@ -21,7 +21,12 @@ pub fn run(
         println!("{}", serde_json::to_string_pretty(&rows)?);
     } else {
         for s in rows {
-            println!("{}\t{}", s.slug, s.version.unwrap_or_default());
+            println!(
+                "{}\t{}\t{}",
+                s.slug,
+                s.version.unwrap_or_default(),
+                s.description.unwrap_or_default()
+            );
         }
     }
     Ok(())

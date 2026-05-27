@@ -3,7 +3,11 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "kdskillhub", version)]
+#[command(
+    name = "skillmux",
+    version,
+    about = "A fast multi-source, multi-target skill manager."
+)]
 pub struct Cli {
     #[arg(short, long)]
     pub config: Option<String>,
@@ -82,5 +86,36 @@ pub fn run() -> Result<()> {
     let api = ApiClient::new(endpoint, cfg.api.timeout, token)?;
     let claw = ClawHubSource::new(None, cfg.api.timeout)?;
     let source = cli.source.unwrap_or_else(|| cfg.source.default.clone());
+    ensure_builtin_skills(&cfg)?;
     commands::dispatch(cli.command, &mut cfg, &api, &claw, &source)
+}
+
+fn ensure_builtin_skills(cfg: &Config) -> Result<()> {
+    use std::fs;
+    let marker = directories::BaseDirs::new()
+        .unwrap()
+        .home_dir()
+        .join(".config/skillhub/.skillmux_bootstrap_done");
+    if marker.exists() {
+        return Ok(());
+    }
+    let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("skills");
+    if src.exists() {
+        for t in &cfg.install.targets {
+            let dst = crate::config::target_skill_dir(t);
+            fs::create_dir_all(&dst)?;
+            for e in fs::read_dir(&src)? {
+                let e = e?;
+                let to = dst.join(e.file_name());
+                if !to.exists() {
+                    crate::installer::install_dir_copy(&e.path(), &to)?;
+                }
+            }
+        }
+    }
+    if let Some(p) = marker.parent() {
+        fs::create_dir_all(p)?;
+    }
+    fs::write(marker, b"ok")?;
+    Ok(())
 }

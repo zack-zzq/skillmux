@@ -39,3 +39,13 @@ pub fn validate_skill_root(root: &std::path::Path) -> Result<()> {
     }
     Ok(())
 }
+
+pub fn repo_description(owner: &str, repo: &str) -> Option<String> {
+    let url = format!("https://api.github.com/repos/{owner}/{repo}");
+    let c = reqwest::blocking::Client::new();
+    let r = c.get(url).header("user-agent", "skillmux").send().ok()?;
+    let v: serde_json::Value = r.json().ok()?;
+    v.get("description")
+        .and_then(|x| x.as_str())
+        .map(|s| s.to_string())
+}

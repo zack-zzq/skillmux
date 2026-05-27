@@ -26,8 +26,9 @@ pub fn run(
                 targets.push((
                     n,
                     info.source
-                        .get("source")
+                        .get("type")
                         .and_then(|v| v.as_str())
+                        .or_else(|| info.source.as_str())
                         .unwrap_or("kingdee")
                         .to_string(),
                 ));
