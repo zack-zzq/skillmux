@@ -16,6 +16,7 @@ thiserror = "1"
 zip = "2"
 walkdir = "2"
 tempfile = "3"
+gix = "0.66"
 
 [build-dependencies]
 anyhow = "1"
