@@ -8,6 +8,14 @@ use std::{
 pub struct SkillStorage {
     pub base: PathBuf,
 }
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct InstalledSkill {
+    pub id: i64,
+    pub name: String,
+    pub version: String,
+}
+
 impl SkillStorage {
     pub fn new(base: PathBuf) -> Self {
         let _ = fs::create_dir_all(&base);
@@ -38,6 +46,11 @@ impl SkillStorage {
             .filter(|e| e.path().is_dir())
             .map(|e| e.file_name().to_string_lossy().to_string())
             .collect())
+    }
+    pub fn load_info(&self, n: &str) -> Option<InstalledSkill> {
+        let p = self.skill_path(n).join(".skillhub/info.json");
+        let b = fs::read(p).ok()?;
+        serde_json::from_slice(&b).ok()
     }
 }
 

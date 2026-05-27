@@ -34,12 +34,15 @@ pub fn run(
         .or(one.version)
         .ok_or_else(|| anyhow!("no version"))?;
     let zip = api.download(one.id, &v)?;
+    let mut installed_targets = 0usize;
+    let mut skipped_targets = 0usize;
     for t in &cfg.install.targets {
         if !install_check_path(t).exists() {
             continue;
         }
         let st = SkillStorage::new(target_skill_dir(t));
         if st.installed(&name) && !force {
+            skipped_targets += 1;
             continue;
         }
         let dest = st.skill_path(&name);
@@ -60,11 +63,14 @@ pub fn run(
             &name,
             &serde_json::json!({"id":one.id,"name":name,"version":v}),
         )?;
+        installed_targets += 1;
     }
     if json {
         println!("{}", serde_json::json!({"name":name,"version":v}));
     } else {
-        println!("installed {name}@{v}");
+        println!(
+            "Installed {name}@{v} to {installed_targets} target(s), skipped {skipped_targets}."
+        );
     }
     Ok(())
 }
