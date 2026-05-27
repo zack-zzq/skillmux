@@ -1,22 +1,27 @@
-use crate::api::{extract_list, ApiClient};
+use crate::{
+    api::ApiClient,
+    sources::{clawhub::ClawHubSource, SkillSource},
+};
 use anyhow::Result;
 pub fn run(
     api: &ApiClient,
+    claw: &ClawHubSource,
+    source: &str,
     keyword: Option<String>,
     limit: u32,
     page: u32,
     json: bool,
 ) -> Result<()> {
-    let v = api.search(keyword, page, limit)?;
-    if json {
-        println!("{}", serde_json::to_string_pretty(&v)?);
+    let rows = if source == "clawhub" {
+        claw.search(keyword, limit, page)?
     } else {
-        for s in extract_list(&v)? {
-            println!(
-                "{}\t{}",
-                s.name,
-                s.current_version.or(s.version).unwrap_or_default()
-            );
+        crate::sources::SkillSource::search(api, keyword, limit, page)?
+    };
+    if json {
+        println!("{}", serde_json::to_string_pretty(&rows)?);
+    } else {
+        for s in rows {
+            println!("{}\t{}", s.slug, s.version.unwrap_or_default());
         }
     }
     Ok(())
