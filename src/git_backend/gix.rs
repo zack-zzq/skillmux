@@ -1,5 +1,7 @@
 use anyhow::{anyhow, Result};
-use git2::{AutotagOption, FetchOptions, Oid, Repository};
+use git2::{
+    build::CheckoutBuilder, AutotagOption, ErrorClass, ErrorCode, FetchOptions, Oid, Repository,
+};
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone)]
@@ -25,6 +27,7 @@ pub enum GitSyncError {
 }
 
 pub fn sync(url: &str, repo_dir: &Path, r#ref: Option<&str>) -> Result<SyncResult> {
+    let requested_ref = r#ref.unwrap_or("HEAD");
     let repo = if repo_dir.exists() {
         open_or_reclone(repo_dir, url)?
     } else {
@@ -32,9 +35,8 @@ pub fn sync(url: &str, repo_dir: &Path, r#ref: Option<&str>) -> Result<SyncResul
     };
 
     fetch_repo(&repo, url)?;
-
-    let resolved = resolve_ref(&repo, r#ref.unwrap_or("HEAD"))?;
-    checkout_commit(&repo, resolved, r#ref.unwrap_or("HEAD"))?;
+    let resolved = resolve_ref(&repo, requested_ref)?;
+    checkout_commit(&repo, resolved, requested_ref)?;
 
     Ok(SyncResult {
         repo_dir: repo_dir.to_path_buf(),
@@ -48,7 +50,9 @@ fn open_or_reclone(repo_dir: &Path, url: &str) -> Result<Repository> {
         Err(e) => {
             std::fs::remove_dir_all(repo_dir).map_err(|ioe| {
                 anyhow!(GitSyncError::CacheCorrupted(format!(
-                    "{e}; failed to remove corrupted cache: {ioe}"
+                    "{}; failed to remove corrupted cache: {}",
+                    e.message(),
+                    ioe
                 )))
             })?;
             clone_repo(url, repo_dir)
@@ -75,6 +79,7 @@ fn fetch_repo(repo: &Repository, url: &str) -> Result<()> {
             &[
                 "+refs/heads/*:refs/remotes/origin/*",
                 "+refs/tags/*:refs/tags/*",
+                "+HEAD:refs/remotes/origin/HEAD",
             ],
             Some(&mut fo),
             None,
@@ -91,11 +96,13 @@ fn resolve_ref(repo: &Repository, ref_name: &str) -> Result<Oid> {
             .map(|c| c.id())
             .map_err(map_git2_err);
     }
+
     if let Ok(oid) = Oid::from_str(ref_name) {
         if repo.find_object(oid, None).is_ok() {
             return Ok(oid);
         }
     }
+
     let candidates = [
         ref_name.to_string(),
         format!("refs/heads/{ref_name}"),
@@ -107,12 +114,15 @@ fn resolve_ref(repo: &Repository, ref_name: &str) -> Result<Oid> {
             return Ok(obj.id());
         }
     }
+
     Err(anyhow!(GitSyncError::RefNotFound(ref_name.to_string())))
 }
 
 fn checkout_commit(repo: &Repository, oid: Oid, ref_name: &str) -> Result<()> {
     let obj = repo.find_object(oid, None).map_err(map_git2_err)?;
-    repo.checkout_tree(&obj, None).map_err(|e| {
+    let mut opts = CheckoutBuilder::new();
+    opts.force();
+    repo.checkout_tree(&obj, Some(&mut opts)).map_err(|e| {
         anyhow!(GitSyncError::CheckoutFailed(
             ref_name.to_string(),
             e.message().to_string()
@@ -129,44 +139,97 @@ fn checkout_commit(repo: &Repository, oid: Oid, ref_name: &str) -> Result<()> {
 
 fn map_git2_err(err: git2::Error) -> anyhow::Error {
     let msg = err.message().to_string();
-    let out = if msg.contains("not found") || msg.contains("Repository not found") {
-        GitSyncError::RepoNotFound(msg)
-    } else if msg.contains("Could not resolve host")
-        || msg.contains("timed out")
-        || msg.contains("connection")
-        || msg.contains("TLS")
-    {
-        GitSyncError::Network(msg)
-    } else {
-        GitSyncError::Other(msg)
+    let mapped = match (err.class(), err.code()) {
+        (ErrorClass::Net, _) | (_, ErrorCode::Certificate) | (_, ErrorCode::Auth) => {
+            GitSyncError::Network(msg)
+        }
+        (_, ErrorCode::NotFound)
+            if msg.contains("Repository not found") || msg.contains("not found") =>
+        {
+            GitSyncError::RepoNotFound(msg)
+        }
+        _ if msg.contains("Could not resolve host")
+            || msg.contains("timed out")
+            || msg.contains("connection")
+            || msg.contains("TLS") =>
+        {
+            GitSyncError::Network(msg)
+        }
+        _ => GitSyncError::Other(msg),
     };
-    anyhow!(out)
+    anyhow!(mapped)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+
+    fn commit_file(repo: &Repository, workdir: &Path, name: &str, body: &str, msg: &str) -> Oid {
+        fs::write(workdir.join(name), body).expect("write file");
+        let mut idx = repo.index().expect("index");
+        idx.add_path(Path::new(name)).expect("add path");
+        idx.write().expect("idx write");
+        let tree_id = idx.write_tree().expect("write tree");
+        let tree = repo.find_tree(tree_id).expect("find tree");
+        let sig = git2::Signature::now("t", "t@t.com").expect("sig");
+        let parent = repo
+            .head()
+            .ok()
+            .and_then(|h| h.target())
+            .and_then(|id| repo.find_commit(id).ok());
+        match parent {
+            Some(p) => repo
+                .commit(Some("HEAD"), &sig, &sig, msg, &tree, &[&p])
+                .expect("commit"),
+            None => repo
+                .commit(Some("HEAD"), &sig, &sig, msg, &tree, &[])
+                .expect("commit"),
+        }
+    }
 
     #[test]
-    fn resolve_ref_supports_commit_and_branch() {
+    fn resolve_ref_supports_commit_branch_tag() {
         let td = tempfile::tempdir().expect("tempdir");
         let repo = Repository::init(td.path()).expect("init");
-        let sig = git2::Signature::now("t", "t@t.com").expect("sig");
-        std::fs::write(td.path().join("a.txt"), "a").expect("write");
-        let mut idx = repo.index().expect("index");
-        idx.add_path(Path::new("a.txt")).expect("add");
-        idx.write().expect("idx write");
-        let tree_id = idx.write_tree().expect("tree");
-        let tree = repo.find_tree(tree_id).expect("find tree");
-        let c = repo
-            .commit(Some("HEAD"), &sig, &sig, "init", &tree, &[])
-            .expect("commit");
+        let oid = commit_file(&repo, td.path(), "a.txt", "a", "init");
+        let c = repo.find_commit(oid).expect("find commit");
+        repo.tag_lightweight("v1", c.as_object(), false)
+            .expect("tag");
 
-        let by_head = resolve_ref(&repo, "HEAD").expect("head");
-        let by_main = resolve_ref(&repo, "master").expect("master");
-        let by_oid = resolve_ref(&repo, &c.to_string()).expect("oid");
-        assert_eq!(by_head, c);
-        assert_eq!(by_main, c);
-        assert_eq!(by_oid, c);
+        assert_eq!(resolve_ref(&repo, "HEAD").expect("head"), oid);
+        assert_eq!(resolve_ref(&repo, "master").expect("master"), oid);
+        assert_eq!(resolve_ref(&repo, "v1").expect("tag"), oid);
+        assert_eq!(resolve_ref(&repo, &oid.to_string()).expect("oid"), oid);
+    }
+
+    #[test]
+    fn sync_clones_and_fetches_with_existing_cache() {
+        let remote_dir = tempfile::tempdir().expect("remote tempdir");
+        let remote_bare = remote_dir.path().join("remote.git");
+        Repository::init_bare(&remote_bare).expect("init bare");
+
+        let src_dir = tempfile::tempdir().expect("src tempdir");
+        let src = Repository::init(src_dir.path()).expect("init src");
+        let _first = commit_file(&src, src_dir.path(), "SKILL.md", "# demo", "first");
+        let mut r = src
+            .remote("origin", remote_bare.to_str().expect("path str"))
+            .expect("remote add");
+        r.push(&["refs/heads/master:refs/heads/master"], None)
+            .expect("push 1");
+
+        let cache_dir = tempfile::tempdir().expect("cache");
+        let repo_cache = cache_dir.path().join("repo");
+        let url = format!("file://{}", remote_bare.to_string_lossy());
+        let first_sync = sync(&url, &repo_cache, Some("HEAD")).expect("first sync");
+        assert!(!first_sync.commit.is_empty());
+
+        let _second = commit_file(&src, src_dir.path(), "README.md", "hi", "second");
+        let mut r2 = src.find_remote("origin").expect("origin");
+        r2.push(&["refs/heads/master:refs/heads/master"], None)
+            .expect("push 2");
+
+        let second_sync = sync(&url, &repo_cache, Some("HEAD")).expect("second sync");
+        assert!(!second_sync.commit.is_empty());
     }
 }
