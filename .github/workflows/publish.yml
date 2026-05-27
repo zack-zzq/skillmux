@@ -57,7 +57,7 @@ jobs:
           maturin-version: v1.11.5
           manylinux: ${{ matrix.manylinux }}
           target: ${{ matrix.target }}
-          args: --release --locked --out dist --bindings bin --compatibility pypi
+          args: --release --out dist --bindings bin --compatibility pypi
         env:
           KDSKILLHUB_DEFAULT_TOKEN: ${{ secrets.KDSKILLHUB_DEFAULT_TOKEN }}
 
