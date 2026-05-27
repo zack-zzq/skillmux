@@ -96,12 +96,3 @@ install:
     - qoder
     - qoderwork
 ```
-
-## Development with uv
-
-```bash
-uv sync --group dev
-uv run kdskillhub --help
-uv run pytest
-uv build
-```
