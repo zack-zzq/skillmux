@@ -2,6 +2,8 @@ use crate::{api::ApiClient, commands, config::Config, sources::clawhub::ClawHubS
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 
+include!(concat!(env!("OUT_DIR"), "/generated_skills.rs"));
+
 #[derive(Parser)]
 #[command(
     name = "skillmux",
@@ -91,7 +93,7 @@ pub fn run() -> Result<()> {
 }
 
 fn ensure_builtin_skills(cfg: &Config) -> Result<()> {
-    use std::fs;
+    use std::{fs, io::Write};
     let marker = directories::BaseDirs::new()
         .unwrap()
         .home_dir()
@@ -99,18 +101,24 @@ fn ensure_builtin_skills(cfg: &Config) -> Result<()> {
     if marker.exists() {
         return Ok(());
     }
-    let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("skills");
-    if src.exists() {
-        for t in &cfg.install.targets {
-            let dst = crate::config::target_skill_dir(t);
-            fs::create_dir_all(&dst)?;
-            for e in fs::read_dir(&src)? {
-                let e = e?;
-                let to = dst.join(e.file_name());
-                if !to.exists() {
-                    crate::installer::install_dir_copy(&e.path(), &to)?;
-                }
+    if BUNDLED_SKILLS.is_empty() {
+        return Ok(());
+    }
+
+    for t in &cfg.install.targets {
+        let dst = crate::config::target_skill_dir(t);
+        fs::create_dir_all(&dst)?;
+
+        for (rel, content) in BUNDLED_SKILLS {
+            let to = dst.join(rel);
+            if to.exists() {
+                continue;
             }
+            if let Some(parent) = to.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            let mut file = fs::File::create(&to)?;
+            file.write_all(content)?;
         }
     }
     if let Some(p) = marker.parent() {
