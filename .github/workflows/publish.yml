@@ -63,6 +63,12 @@ jobs:
           manylinux: ${{ matrix.manylinux }}
           target: ${{ matrix.target }}
           args: --release --out dist --bindings bin --compatibility pypi
+          before-script-linux: |
+            if command -v yum >/dev/null 2>&1; then
+              yum install -y perl-IPC-Cmd
+            elif command -v dnf >/dev/null 2>&1; then
+              dnf install -y perl-IPC-Cmd
+            fi
         env:
           KDSKILLHUB_DEFAULT_TOKEN: ${{ secrets.KDSKILLHUB_DEFAULT_TOKEN }}
 
