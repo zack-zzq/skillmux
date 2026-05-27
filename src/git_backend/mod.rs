@@ -1,1 +1,1 @@
-pub mod gix;
+pub mod git2_backend;
