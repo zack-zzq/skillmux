@@ -23,28 +23,41 @@ pub fn run(
                 continue;
             }
             if let Some(info) = s.load_info(&n) {
-                targets.push((
-                    n,
-                    info.source
-                        .get("type")
-                        .and_then(|v| v.as_str())
-                        .or_else(|| info.source.as_str())
-                        .unwrap_or("kingdee")
-                        .to_string(),
-                ));
+                let src_type = info
+                    .source
+                    .get("type")
+                    .and_then(|v| v.as_str())
+                    .or_else(|| info.source.as_str())
+                    .unwrap_or("kingdee")
+                    .to_string();
+                let source_skill = if src_type == "github" {
+                    let owner = info.source.get("owner").and_then(|v| v.as_str());
+                    let repo = info.source.get("repo").and_then(|v| v.as_str());
+                    let rf = ref_name
+                        .as_deref()
+                        .or_else(|| info.source.get("ref").and_then(|v| v.as_str()))
+                        .unwrap_or("HEAD");
+                    match (owner, repo) {
+                        (Some(owner), Some(repo)) => format!("github:{owner}/{repo}@{rf}"),
+                        _ => format!("{}:{}", src_type, n),
+                    }
+                } else {
+                    format!("{}:{}", src_type, n)
+                };
+                targets.push((n, src_type, source_skill));
             }
         }
     }
     targets.sort();
     targets.dedup();
-    for (name, src) in targets {
+    for (name, src, source_skill) in targets {
         println!("Updating {name} from {src}...");
         install::run(
             api,
             claw,
             &src,
             cfg,
-            &format!("{}:{}", src, name),
+            &source_skill,
             None,
             ref_name.clone(),
             None,

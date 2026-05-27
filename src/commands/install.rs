@@ -1,7 +1,7 @@
 use crate::{
     api::ApiClient,
     config::{target_skill_dir, Config},
-    git_backend::gix,
+    git_backend::git2_backend,
     installer, skill_manifest,
     sources::{clawhub::ClawHubSource, github, SkillSource},
     storage::SkillStorage,
@@ -58,7 +58,7 @@ pub fn run(
             .cache_dir()
             .join("kdskillhub/github")
             .join(github::cache_key(&gh.owner, &gh.repo, &gh.r#ref));
-        let sync = gix::sync(&gh.url, &cache_base.join("repo"), Some(&gh.r#ref))?;
+        let sync = git2_backend::sync(&gh.url, &cache_base.join("repo"), Some(&gh.r#ref))?;
         let src_root = gh
             .subdir
             .as_deref()

@@ -20,11 +20,15 @@ pub fn parse(input: &str) -> Option<GitHubSource> {
     if owner.is_empty() || repo.is_empty() {
         return None;
     }
+    let (repo, r#ref) = repo
+        .split_once("@")
+        .map(|(r, rf)| (r.to_string(), rf.to_string()))
+        .unwrap_or((repo, "HEAD".into()));
     Some(GitHubSource {
         url: format!("https://github.com/{owner}/{repo}"),
         owner,
         repo,
-        r#ref: "HEAD".into(),
+        r#ref,
         subdir: None,
     })
 }
@@ -48,4 +52,20 @@ pub fn repo_description(owner: &str, repo: &str) -> Option<String> {
     v.get("description")
         .and_then(|x| x.as_str())
         .map(|s| s.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse;
+
+    #[test]
+    fn parse_supports_prefix_and_ref() {
+        let s = parse("gh:owner/repo@main").expect("parsed");
+        assert_eq!(s.owner, "owner");
+        assert_eq!(s.repo, "repo");
+        assert_eq!(s.r#ref, "main");
+
+        let s2 = parse("github:owner/repo").expect("parsed");
+        assert_eq!(s2.r#ref, "HEAD");
+    }
 }
