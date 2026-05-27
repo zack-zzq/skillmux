@@ -1,32 +1,18 @@
-use crate::{
-    config::target_skill_dir, config::Config, storage::InstalledSkill, storage::SkillStorage,
-};
+use crate::{config::{target_skill_dir, Config}, storage::SkillStorage};
 use anyhow::Result;
+
 pub fn run(cfg: &Config, json: bool) -> Result<()> {
-    let mut all: Vec<(String, InstalledSkill)> = vec![];
+    let mut rows = vec![];
     for t in &cfg.install.targets {
         let s = SkillStorage::new(target_skill_dir(t));
         for n in s.list().unwrap_or_default() {
             if let Some(info) = s.load_info(&n) {
-                all.push((t.clone(), info));
+                let src = info.source.get("type").and_then(|v|v.as_str()).unwrap_or("legacy");
+                rows.push(serde_json::json!({"target":t,"name":info.name,"source":src,"version":info.version,"commit":info.source.get("commit")}));
             }
         }
     }
-    all.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.name.cmp(&b.1.name)));
-    if json {
-        println!("{}", serde_json::to_string_pretty(&all)?);
-    } else {
-        if all.is_empty() {
-            println!("No skills installed by kdskillhub.");
-        } else {
-            for (t, info) in all {
-                println!(
-                    "{t:<10} {name:<36} v{version}",
-                    name = info.name,
-                    version = info.version
-                );
-            }
-        }
-    }
+    if json { println!("{}", serde_json::to_string_pretty(&rows)?); }
+    else { for r in rows { println!("{:<10} {:<24} {:<8} {}", r["target"], r["name"], r["source"], r["version"]); } }
     Ok(())
 }

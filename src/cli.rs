@@ -17,48 +17,17 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Cmd {
-    Search {
-        keyword: Option<String>,
-        #[arg(long, default_value_t = 20)]
-        limit: u32,
-        #[arg(long, default_value_t = 1)]
-        page: u32,
-        #[arg(long)]
-        json: bool,
-    },
-    Install {
-        skill: String,
-        #[arg(long)]
-        version: Option<String>,
-        #[arg(long)]
-        force: bool,
-        #[arg(long)]
-        json: bool,
-    },
-    List {
-        #[arg(long)]
-        json: bool,
-    },
-    Update {
-        skill: Option<String>,
-        #[arg(long)]
-        all: bool,
-    },
+    Search { keyword: Option<String>, #[arg(long, default_value_t = 20)] limit: u32, #[arg(long, default_value_t = 1)] page: u32, #[arg(long)] json: bool },
+    Install { skill: String, #[arg(long)] version: Option<String>, #[arg(long="ref")] ref_name: Option<String>, #[arg(long)] subdir: Option<String>, #[arg(long="as")] as_name: Option<String>, #[arg(short='y', long)] yes: bool, #[arg(long)] force: bool, #[arg(long)] json: bool },
+    List { #[arg(long)] json: bool },
+    Update { skill: Option<String>, #[arg(long)] all: bool, #[arg(long="ref")] ref_name: Option<String> },
     #[command(visible_alias = "uninstall")]
-    Remove { skill: String },
-    Config {
-        #[command(subcommand)]
-        sub: ConfigCmd,
-    },
+    Remove { skill: String, #[arg(long)] purge: bool },
+    Config { #[command(subcommand)] sub: ConfigCmd },
 }
 
 #[derive(Subcommand)]
-pub enum ConfigCmd {
-    List,
-    Get { key: String },
-    Set { key: String, value: String },
-    Targets { targets: String },
-}
+pub enum ConfigCmd { List, Get { key: String }, Set { key: String, value: String }, Targets { targets: String } }
 
 pub fn run() -> Result<()> {
     let cli = Cli::parse();

@@ -96,3 +96,42 @@ install:
     - qoder
     - qoderwork
 ```
+
+## GitHub Skill 安装与更新
+
+支持以下来源：
+
+- `gh:owner/repo`
+- `github:owner/repo`
+- `https://github.com/owner/repo`
+
+示例：
+
+```bash
+# 安装 GitHub Skill（默认会交互确认第三方来源）
+kdskillhub install gh:owner/repo
+
+# 指定 ref 和子目录
+kdskillhub install github:owner/repo --ref v1.2.3 --subdir skills/my-skill
+
+# 指定安装名
+kdskillhub install https://github.com/owner/repo --as my-skill
+
+# 跳过确认
+kdskillhub install gh:owner/repo -y
+
+# 更新全部（Kingdee 继续按原逻辑；GitHub 按 ref 拉取）
+kdskillhub update --all
+
+# 切换到新 ref
+kdskillhub update my-skill --ref main
+
+# 删除并清理 GitHub cache
+kdskillhub remove my-skill --purge
+```
+
+说明：
+
+- GitHub 来源通过 `gix` clone/fetch 到本地 cache，不使用 archive/zipball。
+- 安装优先使用符号链接；Windows 下符号链接失败时自动回退复制。
+- 每个安装目录中的 `.skillhub/info.json` 会记录 `source` 元数据（`type/owner/repo/url/ref/subdir/commit/backend`）。
