@@ -6,6 +6,20 @@ use crate::{
     storage::SkillStorage,
 };
 use anyhow::Result;
+use serde_json::Value;
+
+fn source_name(v: &Value) -> &str {
+    match v {
+        Value::String(s) if !s.trim().is_empty() => s,
+        Value::Object(map) => map
+            .get("source")
+            .or_else(|| map.get("type"))
+            .and_then(|x| x.as_str())
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or("kingdee"),
+        _ => "kingdee",
+    }
+}
 
 pub fn run(
     api: &ApiClient,
@@ -23,14 +37,7 @@ pub fn run(
                 continue;
             }
             if let Some(info) = s.load_info(&n) {
-                targets.push((
-                    n,
-                    info.source
-                        .get("source")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("kingdee")
-                        .to_string(),
-                ));
+                targets.push((n, source_name(&info.source).to_string()));
             }
         }
     }
