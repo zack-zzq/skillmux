@@ -38,6 +38,7 @@ pub fn run(
     targets.sort();
     targets.dedup();
     for (name, src) in targets {
+        println!("Updating {name} from {src}...");
         install::run(
             api,
             claw,

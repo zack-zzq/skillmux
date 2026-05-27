@@ -22,9 +22,11 @@ pub struct RemoteSkill {
 }
 
 pub trait SkillSource {
+    #[allow(dead_code)]
     fn name(&self) -> &'static str;
     fn search(&self, keyword: Option<String>, limit: u32, page: u32) -> Result<Vec<RemoteSkill>>;
     fn resolve(&self, slug: &str) -> Result<RemoteSkill>;
+    #[allow(dead_code)]
     fn versions(&self, slug: &str) -> Result<Vec<RemoteSkillVersion>>;
     fn download(&self, slug: &str, version: Option<&str>) -> Result<Vec<u8>>;
     fn pre_install_check(&self, _slug: &str) -> Result<()> {
