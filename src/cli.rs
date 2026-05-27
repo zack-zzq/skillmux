@@ -44,9 +44,8 @@ pub enum Cmd {
         #[arg(long)]
         all: bool,
     },
-    Remove {
-        skill: String,
-    },
+    #[command(visible_alias = "uninstall")]
+    Remove { skill: String },
     Config {
         #[command(subcommand)]
         sub: ConfigCmd,
