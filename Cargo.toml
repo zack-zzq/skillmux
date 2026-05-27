@@ -16,7 +16,7 @@ thiserror = "1"
 zip = "2"
 walkdir = "2"
 tempfile = "3"
-git2 = { version = "0.20", default-features = false, features = ["https", "vendored-libgit2"] }
+git2 = { version = "0.20", default-features = false, features = ["https", "vendored-libgit2", "vendored-openssl"] }
 
 [build-dependencies]
 anyhow = "1"
