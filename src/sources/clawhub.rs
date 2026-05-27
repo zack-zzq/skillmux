@@ -1,5 +1,7 @@
 use anyhow::{anyhow, Result};
-use reqwest::blocking::Client;
+use reqwest::blocking::{Client, Response};
+use reqwest::header::{ACCEPT, CONTENT_TYPE, RETRY_AFTER};
+use reqwest::StatusCode;
 use serde_json::Value;
 
 use super::{RemoteSkill, RemoteSkillVersion, SkillSource};
@@ -9,6 +11,7 @@ pub struct ClawHubSource {
     pub base: String,
     client: Client,
 }
+
 impl ClawHubSource {
     pub fn new(base: Option<String>, timeout: u64) -> Result<Self> {
         Ok(Self {
@@ -21,34 +24,35 @@ impl ClawHubSource {
                 .build()?,
         })
     }
+
     fn get_json(&self, path: &str, params: &[(&str, String)]) -> Result<Value> {
-        let r = self
+        let resp = self
             .client
             .get(format!("{}{}", self.base, path))
+            .header(ACCEPT, "application/json")
             .query(params)
             .send()?;
-        if r.status().as_u16() == 429 {
-            return Err(anyhow!("rate limited (429)"));
-        }
-        Ok(r.json()?)
+
+        let resp = ensure_success(resp, "clawhub api")?;
+        Ok(resp.json()?)
     }
+
     fn map_skill(&self, v: &Value) -> RemoteSkill {
         let slug = v
             .get("slug")
             .and_then(|x| x.as_str())
             .unwrap_or_default()
             .to_string();
+
         let name = v
             .get("name")
+            .or_else(|| v.get("displayName"))
             .and_then(|x| x.as_str())
             .unwrap_or(slug.as_str())
             .to_string();
-        let version = v
-            .get("version")
-            .or_else(|| v.get("latestVersion"))
-            .or_else(|| v.get("tag"))
-            .and_then(|x| x.as_str())
-            .map(|s| s.to_string());
+
+        let version = extract_version(v);
+
         RemoteSkill {
             name,
             slug: slug.clone(),
@@ -57,18 +61,22 @@ impl ClawHubSource {
             source: "clawhub".into(),
             description: v
                 .get("description")
+                .or_else(|| v.get("summary"))
                 .and_then(|x| x.as_str())
                 .map(|s| s.to_string()),
             meta: v.clone(),
         }
     }
 }
+
 impl SkillSource for ClawHubSource {
     fn name(&self) -> &'static str {
         "clawhub"
     }
+
     fn search(&self, keyword: Option<String>, limit: u32, _page: u32) -> Result<Vec<RemoteSkill>> {
         let q = keyword.unwrap_or_default();
+
         let v = self.get_json(
             "/api/v1/search",
             &[
@@ -77,64 +85,262 @@ impl SkillSource for ClawHubSource {
                 ("nonSuspiciousOnly", "true".into()),
             ],
         )?;
+
         let arr = v
             .get("data")
             .and_then(|d| d.as_array())
             .cloned()
             .or_else(|| v.as_array().cloned())
             .unwrap_or_default();
+
         Ok(arr.iter().map(|i| self.map_skill(i)).collect())
     }
+
     fn resolve(&self, slug: &str) -> Result<RemoteSkill> {
         let v = self.get_json(&format!("/api/v1/skills/{slug}"), &[])?;
         Ok(self.map_skill(v.get("data").unwrap_or(&v)))
     }
+
     fn versions(&self, slug: &str) -> Result<Vec<RemoteSkillVersion>> {
         let v = self.get_json(&format!("/api/v1/skills/{slug}/versions"), &[])?;
+
         let arr = v
             .get("data")
             .and_then(|d| d.as_array())
             .cloned()
             .or_else(|| v.as_array().cloned())
             .unwrap_or_default();
+
         Ok(arr
             .into_iter()
             .filter_map(|x| {
-                x.get("version")
-                    .or_else(|| x.get("tag"))
-                    .and_then(|s| s.as_str())
-                    .map(|s| RemoteSkillVersion { version: s.into() })
+                extract_version(&x).map(|version| RemoteSkillVersion { version })
             })
             .collect())
     }
+
     fn download(&self, slug: &str, version: Option<&str>) -> Result<Vec<u8>> {
-        let ver = version.unwrap_or("latest");
+        let params = download_params(slug, version);
+
         let resp = self
             .client
             .get(format!("{}/api/v1/download", self.base))
-            .query(&[("slug", slug), ("version", ver)])
+            .header(ACCEPT, "application/zip, application/octet-stream, */*")
+            .query(&params)
             .send()?;
-        if resp.status().as_u16() == 429 {
-            return Err(anyhow!("rate limited (429)"));
+
+        let resp = ensure_success(resp, "clawhub download")?;
+
+        let content_type = resp
+            .headers()
+            .get(CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .to_string();
+
+        let bytes = resp.bytes()?.to_vec();
+
+        if !looks_like_zip(&bytes) {
+            return Err(anyhow!(
+                "clawhub download did not return a ZIP archive; content-type: {}; response preview: {}",
+                if content_type.is_empty() {
+                    "<missing>"
+                } else {
+                    content_type.as_str()
+                },
+                preview_bytes(&bytes, 500)
+            ));
         }
-        Ok(resp.bytes()?.to_vec())
+
+        Ok(bytes)
     }
+
     fn pre_install_check(&self, slug: &str) -> Result<()> {
         let paths = ["scan", "verify"];
+
         for p in paths {
-            let u = format!("{}/api/v1/skills/{}/{}", self.base, slug, p);
-            if let Ok(r) = self.client.get(&u).send() {
-                if r.status().is_success() {
-                    let v: Value = r.json().unwrap_or(Value::Null);
-                    let status = v.get("status").and_then(|x| x.as_str()).unwrap_or("");
-                    if status.eq_ignore_ascii_case("malicious")
-                        || status.eq_ignore_ascii_case("malware-blocked")
-                    {
-                        return Err(anyhow!("blocked by security scan: {status}"));
-                    }
-                }
+            let url = format!("{}/api/v1/skills/{}/{}", self.base, slug, p);
+
+            let Ok(resp) = self.client.get(&url).header(ACCEPT, "application/json").send() else {
+                continue;
+            };
+
+            if !resp.status().is_success() {
+                continue;
+            }
+
+            let v: Value = resp.json().unwrap_or(Value::Null);
+            let status = v.get("status").and_then(|x| x.as_str()).unwrap_or("");
+
+            if status.eq_ignore_ascii_case("malicious")
+                || status.eq_ignore_ascii_case("malware-blocked")
+            {
+                return Err(anyhow!("blocked by security scan: {status}"));
             }
         }
+
         Ok(())
+    }
+}
+
+fn extract_version(v: &Value) -> Option<String> {
+    v.get("version")
+        .or_else(|| v.get("tag"))
+        .and_then(|x| x.as_str())
+        .map(|s| s.to_string())
+        .or_else(|| {
+            v.get("latestVersion")
+                .and_then(|x| x.as_str())
+                .map(|s| s.to_string())
+        })
+        .or_else(|| {
+            v.get("latestVersion")
+                .and_then(|x| x.get("version"))
+                .and_then(|x| x.as_str())
+                .map(|s| s.to_string())
+        })
+        .or_else(|| {
+            v.get("latest")
+                .and_then(|x| x.get("version"))
+                .and_then(|x| x.as_str())
+                .map(|s| s.to_string())
+        })
+}
+
+fn download_params(slug: &str, version: Option<&str>) -> Vec<(&'static str, String)> {
+    let mut params = vec![("slug", slug.to_string())];
+
+    match version.map(str::trim) {
+        Some(v) if !v.is_empty() && !v.eq_ignore_ascii_case("latest") => {
+            params.push(("version", v.to_string()));
+        }
+        _ => {
+            params.push(("tag", "latest".to_string()));
+        }
+    }
+
+    params
+}
+
+fn ensure_success(resp: Response, context: &str) -> Result<Response> {
+    let status = resp.status();
+
+    if status.is_success() {
+        return Ok(resp);
+    }
+
+    let retry_after = resp
+        .headers()
+        .get(RETRY_AFTER)
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
+
+    let body = resp
+        .text()
+        .unwrap_or_else(|_| "<failed to read response body>".to_string());
+
+    if status == StatusCode::TOO_MANY_REQUESTS {
+        if let Some(retry_after) = retry_after {
+            return Err(anyhow!(
+                "{context} failed with rate limit 429; retry after {retry_after}s; response: {}",
+                preview_text(&body, 500)
+            ));
+        }
+
+        return Err(anyhow!(
+            "{context} failed with rate limit 429; response: {}",
+            preview_text(&body, 500)
+        ));
+    }
+
+    Err(anyhow!(
+        "{context} failed with HTTP {status}; response: {}",
+        preview_text(&body, 500)
+    ))
+}
+
+fn looks_like_zip(bytes: &[u8]) -> bool {
+    bytes.starts_with(b"PK\x03\x04")
+        || bytes.starts_with(b"PK\x05\x06")
+        || bytes.starts_with(b"PK\x07\x08")
+}
+
+fn preview_bytes(bytes: &[u8], max_len: usize) -> String {
+    if bytes.is_empty() {
+        return "<empty response>".to_string();
+    }
+
+    let take = bytes.len().min(max_len);
+    let text = String::from_utf8_lossy(&bytes[..take]);
+    preview_text(&text, max_len)
+}
+
+fn preview_text(text: &str, max_len: usize) -> String {
+    let one_line = text
+        .replace('\r', " ")
+        .replace('\n', " ")
+        .trim()
+        .to_string();
+
+    if one_line.is_empty() {
+        return "<non-text response>".to_string();
+    }
+
+    if one_line.len() > max_len {
+        format!("{}...", &one_line[..max_len])
+    } else {
+        one_line
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn latest_uses_tag_not_version() {
+        let params = download_params("resume-assistant", Some("latest"));
+
+        assert_eq!(
+            params,
+            vec![
+                ("slug", "resume-assistant".to_string()),
+                ("tag", "latest".to_string())
+            ]
+        );
+    }
+
+    #[test]
+    fn none_uses_latest_tag() {
+        let params = download_params("resume-assistant", None);
+
+        assert_eq!(
+            params,
+            vec![
+                ("slug", "resume-assistant".to_string()),
+                ("tag", "latest".to_string())
+            ]
+        );
+    }
+
+    #[test]
+    fn semver_uses_version() {
+        let params = download_params("resume-assistant", Some("1.2.3"));
+
+        assert_eq!(
+            params,
+            vec![
+                ("slug", "resume-assistant".to_string()),
+                ("version", "1.2.3".to_string())
+            ]
+        );
+    }
+
+    #[test]
+    fn zip_magic_is_detected() {
+        assert!(looks_like_zip(b"PK\x03\x04abc"));
+        assert!(looks_like_zip(b"PK\x05\x06abc"));
+        assert!(looks_like_zip(b"PK\x07\x08abc"));
+        assert!(!looks_like_zip(b"not a zip"));
     }
 }
