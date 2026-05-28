@@ -2,9 +2,9 @@
 
 [中文文档 / Chinese Documentation](./README_CN.md)
 
-**skillmux** is a high-performance CLI for managing Skills across multiple remote sources and multiple local runtime targets.
+![](./assets/skillmux_logo.png)
 
-> Philosophy: **A fast multi-source, multi-target skill manager.**
+**skillmux** is a high-performance CLI for managing Skills across multiple remote sources and multiple local runtime targets.
 
 ---
 

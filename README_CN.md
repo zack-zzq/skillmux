@@ -2,9 +2,9 @@
 
 [English Documentation](./README.md)
 
-**skillmux** 是一个高性能的 Skill 管理 CLI，支持多来源（source）检索与多目标（target）安装，适配常见 agent 运行环境。
+![](./assets/skillmux_logo.png)
 
-> 理念：**A fast multi-source, multi-target skill manager.**
+**skillmux** 是一个高性能的 Skill 管理 CLI，支持多来源（source）检索与多目标（target）安装，适配常见 agent 运行环境。
 
 ---
 
