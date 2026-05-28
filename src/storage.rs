@@ -15,6 +15,12 @@ pub struct InstalledSkill {
     pub version: String,
 
     #[serde(default)]
+    pub slug: Option<String>,
+
+    #[serde(default)]
+    pub display_name: Option<String>,
+
+    #[serde(default)]
     pub target: Option<String>,
 
     #[serde(default)]

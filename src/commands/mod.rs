@@ -33,7 +33,8 @@ pub fn dispatch(
             json,
         } => install::run(
             api, claw, source, cfg, &skill, version, ref_name, subdir, as_name, yes, force, json,
-        ),
+        )
+        .map(|_| ()),
         Cmd::List { json } => list::run(cfg, json),
         Cmd::Update {
             skill,

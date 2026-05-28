@@ -192,6 +192,7 @@ mod tests {
     fn resolve_ref_supports_commit_branch_tag() {
         let td = tempfile::tempdir().expect("tempdir");
         let repo = Repository::init(td.path()).expect("init");
+        repo.set_head("refs/heads/master").expect("set master");
         let oid = commit_file(&repo, td.path(), "a.txt", "a", "init");
         let c = repo.find_commit(oid).expect("find commit");
         repo.tag_lightweight("v1", c.as_object(), false)
@@ -207,10 +208,12 @@ mod tests {
     fn sync_clones_and_fetches_with_existing_cache() {
         let remote_dir = tempfile::tempdir().expect("remote tempdir");
         let remote_bare = remote_dir.path().join("remote.git");
-        Repository::init_bare(&remote_bare).expect("init bare");
+        let remote = Repository::init_bare(&remote_bare).expect("init bare");
+        remote.set_head("refs/heads/master").expect("remote master");
 
         let src_dir = tempfile::tempdir().expect("src tempdir");
         let src = Repository::init(src_dir.path()).expect("init src");
+        src.set_head("refs/heads/master").expect("set master");
         let _first = commit_file(&src, src_dir.path(), "SKILL.md", "# demo", "first");
         let mut r = src
             .remote("origin", remote_bare.to_str().expect("path str"))
@@ -220,7 +223,7 @@ mod tests {
 
         let cache_dir = tempfile::tempdir().expect("cache");
         let repo_cache = cache_dir.path().join("repo");
-        let url = format!("file://{}", remote_bare.to_string_lossy());
+        let url = remote_bare.to_string_lossy().to_string();
         let first_sync = sync(&url, &repo_cache, Some("HEAD")).expect("first sync");
         assert!(!first_sync.commit.is_empty());
 

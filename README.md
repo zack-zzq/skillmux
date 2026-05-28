@@ -63,6 +63,8 @@ Optional install controls:
 - `--force` to overwrite/refresh existing content.
 - `--json` for machine-readable output.
 
+For registry sources, the local folder name defaults to the skill slug. Display names from `SKILL.md` are saved as metadata, which avoids duplicate installs when a skill has a localized display name.
+
 ### 3) Rich local inventory
 `skillmux list` shows installed skills with metadata such as:
 - target
@@ -73,7 +75,8 @@ Optional install controls:
 
 ### 4) Safe updates
 - Update one installed skill by name.
-- Update all installed skills with `--all`.
+- Update all installed skills with `--all` or with no update argument.
+- Shows per-skill `installed` / `updated` / `unchanged` status instead of repeated install logs.
 - Keeps source information to make update behavior deterministic.
 
 ### 5) Clean removal
@@ -145,6 +148,9 @@ skillmux config list
 skillmux config get <key>
 skillmux config set <key> <value>
 skillmux config targets <target1,target2,...>
+skillmux config targets set <target1,target2,...>
+skillmux config targets add <target1,target2,...>
+skillmux config targets remove <target1,target2,...>
 ```
 
 ---

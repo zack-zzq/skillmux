@@ -27,6 +27,43 @@ pub fn parse_skill_identifier(v: &str) -> (Option<String>, String, Option<String
     }
 }
 
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct InstallReport {
+    pub name: String,
+    pub version: String,
+    pub source: String,
+    pub targets: Vec<TargetInstallReport>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct TargetInstallReport {
+    pub target: String,
+    pub status: InstallStatus,
+    pub previous_version: Option<String>,
+    pub version: String,
+    pub legacy_aliases_removed: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum InstallStatus {
+    Installed,
+    Updated,
+    Unchanged,
+    Reinstalled,
+}
+
+impl InstallStatus {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Installed => "installed",
+            Self::Updated => "updated",
+            Self::Unchanged => "unchanged",
+            Self::Reinstalled => "reinstalled",
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn run(
     api: &ApiClient,
@@ -41,9 +78,44 @@ pub fn run(
     yes: bool,
     force: bool,
     json: bool,
-) -> Result<()> {
+) -> Result<InstallReport> {
+    let report = run_silent(
+        api, claw, source, cfg, skill, version, ref_name, subdir, as_name, yes, force,
+    )?;
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        print_install_report(&report);
+    }
+
+    Ok(report)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn run_silent(
+    api: &ApiClient,
+    claw: &ClawHubSource,
+    source: &str,
+    cfg: &Config,
+    skill: &str,
+    version: Option<String>,
+    ref_name: Option<String>,
+    subdir: Option<String>,
+    as_name: Option<String>,
+    yes: bool,
+    force: bool,
+) -> Result<InstallReport> {
+    if cfg.install.targets.is_empty() {
+        return Err(anyhow!(
+            "no install targets configured. Use `skillmux config targets add <target>` first"
+        ));
+    }
+
     if let Some(mut gh) = github::parse(skill) {
-        gh.r#ref = ref_name.unwrap_or_else(|| "HEAD".into());
+        if let Some(ref_name) = ref_name {
+            gh.r#ref = ref_name;
+        }
         gh.subdir = subdir.clone();
 
         if !yes {
@@ -101,23 +173,18 @@ pub fn run(
             }
         });
 
-        for t in &cfg.install.targets {
-            let st = SkillStorage::new(target_skill_dir(t));
-
-            if st.installed(&install_name) && !force {
-                st.save_info(&install_name, &info)?;
-                continue;
-            }
-
-            installer::install_dir(&src_root, &st.skill_path(&install_name))?;
-            st.save_info(&install_name, &info)?;
-        }
-
-        if json {
-            println!("{}", serde_json::json!({ "name": install_name }));
-        }
-
-        return Ok(());
+        return install_to_targets(
+            cfg,
+            &src_root,
+            &install_name,
+            &install_name,
+            "github",
+            &sync.commit,
+            &info,
+            &[],
+            true,
+            force,
+        );
     }
 
     let (pref, slug, ver2) = parse_skill_identifier(skill);
@@ -143,23 +210,12 @@ pub fn run(
         .ok()
         .and_then(|content| skill_manifest::parse_skill_md(&content).ok());
 
-    let install_name = as_name.unwrap_or_else(|| {
-        if src == "clawhub" {
-            slug.clone()
-        } else {
-            first_non_empty([
-                local_manifest.as_ref().map(|m| m.name.clone()),
-                Some(resolved.name.clone()),
-                Some(slug.clone()),
-            ])
-            .unwrap_or_else(|| slug.clone())
-        }
-    });
+    let install_name = as_name.unwrap_or_else(|| slug.clone());
     validate_install_name(&install_name)?;
 
     let display_name = first_non_empty([
-        Some(resolved.name.clone()),
         local_manifest.as_ref().map(|m| m.name.clone()),
+        Some(resolved.name.clone()),
     ]);
 
     let description = first_non_empty([
@@ -179,36 +235,204 @@ pub fn run(
         }
     });
 
+    let legacy_aliases: Vec<String> = [
+        local_manifest.as_ref().map(|m| m.name.clone()),
+        Some(resolved.name.clone()),
+    ]
+    .into_iter()
+    .flatten()
+    .filter(|name| name != &install_name)
+    .collect();
+
+    install_to_targets(
+        cfg,
+        &skill_root,
+        &install_name,
+        &slug,
+        &src,
+        &v,
+        &info,
+        &legacy_aliases,
+        false,
+        force,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn install_to_targets(
+    cfg: &Config,
+    src_root: &Path,
+    install_name: &str,
+    source_slug: &str,
+    source_type: &str,
+    version: &str,
+    info: &serde_json::Value,
+    legacy_aliases: &[String],
+    allow_symlink: bool,
+    force: bool,
+) -> Result<InstallReport> {
+    let mut targets = Vec::new();
+
     for t in &cfg.install.targets {
         let st = SkillStorage::new(target_skill_dir(t));
-        let dst = st.skill_path(&install_name);
+        let dst = st.skill_path(install_name);
+        let previous = st.load_info(install_name);
+        let previous_version = previous
+            .as_ref()
+            .map(|info| info.version.trim().to_string())
+            .filter(|v| !v.is_empty());
+        let was_installed = st.installed(install_name);
+        let version_changed = previous_version
+            .as_deref()
+            .map(|previous| previous != version)
+            .unwrap_or(false);
 
-        if st.installed(&install_name) && !force {
-            st.save_info(&install_name, &info)?;
+        let status = if was_installed && !force && !version_changed {
+            st.save_info(install_name, info)?;
+            InstallStatus::Unchanged
+        } else {
+            if allow_symlink {
+                installer::install_dir(src_root, &dst)?;
+            } else {
+                installer::install_dir_copy(src_root, &dst)?;
+            }
+
+            verify_installed_skill(&dst)?;
+            st.save_info(install_name, info)?;
+
+            if !was_installed {
+                InstallStatus::Installed
+            } else if version_changed {
+                InstallStatus::Updated
+            } else {
+                InstallStatus::Reinstalled
+            }
+        };
+
+        let legacy_aliases_removed =
+            remove_legacy_aliases(&st, install_name, source_slug, source_type, legacy_aliases)?;
+
+        targets.push(TargetInstallReport {
+            target: t.clone(),
+            status,
+            previous_version,
+            version: version.to_string(),
+            legacy_aliases_removed,
+        });
+    }
+
+    Ok(InstallReport {
+        name: install_name.to_string(),
+        version: version.to_string(),
+        source: source_type.to_string(),
+        targets,
+    })
+}
+
+fn verify_installed_skill(dst: &Path) -> Result<()> {
+    if dst.join("SKILL.md").exists() {
+        return Ok(());
+    }
+
+    if dst.exists() {
+        fs::remove_dir_all(dst)?;
+    }
+
+    Err(anyhow!(
+        "install verification failed: SKILL.md missing in {}",
+        dst.display()
+    ))
+}
+
+fn remove_legacy_aliases(
+    storage: &SkillStorage,
+    install_name: &str,
+    source_slug: &str,
+    source_type: &str,
+    aliases: &[String],
+) -> Result<Vec<String>> {
+    let mut removed = Vec::new();
+
+    for alias in aliases {
+        if alias == install_name || !is_removable_alias(alias) || removed.contains(alias) {
             continue;
         }
 
-        installer::install_dir_copy(&skill_root, &dst)?;
-
-        if !dst.join("SKILL.md").exists() {
-            if dst.exists() {
-                fs::remove_dir_all(&dst)?;
-            }
-
-            return Err(anyhow!(
-                "install verification failed: SKILL.md missing in {}",
-                dst.display()
-            ));
+        if !storage.installed(alias) {
+            continue;
         }
 
-        st.save_info(&install_name, &info)?;
+        let Some(info) = storage.load_info(alias) else {
+            continue;
+        };
 
-        if !json {
-            println!("Installed {install_name} -> {t}");
+        let installed_source = info
+            .source
+            .get("type")
+            .and_then(|v| v.as_str())
+            .or_else(|| info.source.as_str())
+            .unwrap_or("kingdee");
+
+        if info.slug.as_deref() == Some(source_slug) && installed_source == source_type {
+            storage.remove(alias)?;
+            removed.push(alias.clone());
         }
     }
 
-    Ok(())
+    Ok(removed)
+}
+
+fn is_removable_alias(alias: &str) -> bool {
+    let trimmed = alias.trim();
+
+    !trimmed.is_empty()
+        && trimmed == alias
+        && trimmed != "."
+        && trimmed != ".."
+        && !trimmed.contains('/')
+        && !trimmed.contains('\\')
+}
+
+fn print_install_report(report: &InstallReport) {
+    for target in &report.targets {
+        match target.status {
+            InstallStatus::Installed => {
+                println!("Installed {} -> {}", report.name, target.target);
+            }
+            InstallStatus::Updated => {
+                println!(
+                    "Updated {} -> {} ({})",
+                    report.name,
+                    target.target,
+                    version_transition(target)
+                );
+            }
+            InstallStatus::Unchanged => {
+                println!(
+                    "Already installed {} -> {} ({})",
+                    report.name, target.target, target.version
+                );
+            }
+            InstallStatus::Reinstalled => {
+                println!("Reinstalled {} -> {}", report.name, target.target);
+            }
+        }
+
+        for alias in &target.legacy_aliases_removed {
+            println!(
+                "Removed duplicate install alias {} -> {}",
+                alias, target.target
+            );
+        }
+    }
+}
+
+fn version_transition(target: &TargetInstallReport) -> String {
+    target
+        .previous_version
+        .as_ref()
+        .map(|previous| format!("{previous} -> {}", target.version))
+        .unwrap_or_else(|| target.version.clone())
 }
 
 fn first_non_empty(values: impl IntoIterator<Item = Option<String>>) -> Option<String> {

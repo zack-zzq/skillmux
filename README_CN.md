@@ -63,6 +63,8 @@
 - `--force`：强制覆盖/刷新。
 - `--json`：输出机器可读结果。
 
+对于 registry 类型来源，本地目录名默认使用 skill slug。`SKILL.md` 中的中文名等展示名会保存为元数据，避免同一个技能因为展示名不同被重复安装。
+
 ### 3）本地清单可观测
 `skillmux list` 可显示完整安装信息，例如：
 - target
@@ -73,7 +75,8 @@
 
 ### 4）可控升级
 - 支持单个技能升级。
-- 支持 `--all` 全量升级。
+- 支持 `--all` 全量升级；`update` 不带参数时也等同于全量升级。
+- 输出每个 skill 的 `installed` / `updated` / `unchanged` 状态，不再重复打印每个 target 的安装日志。
 - 根据记录的来源信息执行升级，行为更可预测。
 
 ### 5）安全卸载
@@ -145,6 +148,9 @@ skillmux config list
 skillmux config get <key>
 skillmux config set <key> <value>
 skillmux config targets <target1,target2,...>
+skillmux config targets set <target1,target2,...>
+skillmux config targets add <target1,target2,...>
+skillmux config targets remove <target1,target2,...>
 ```
 
 ---

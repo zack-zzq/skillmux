@@ -81,7 +81,26 @@ pub enum ConfigCmd {
         value: String,
     },
     Targets {
+        #[command(subcommand)]
+        action: Option<TargetsCmd>,
         #[arg(value_delimiter = ',', num_args = 0..)]
+        targets: Vec<String>,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum TargetsCmd {
+    List,
+    Set {
+        #[arg(value_delimiter = ',', num_args = 1..)]
+        targets: Vec<String>,
+    },
+    Add {
+        #[arg(value_delimiter = ',', num_args = 1..)]
+        targets: Vec<String>,
+    },
+    Remove {
+        #[arg(value_delimiter = ',', num_args = 1..)]
         targets: Vec<String>,
     },
 }

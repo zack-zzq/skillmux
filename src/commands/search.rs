@@ -2,7 +2,7 @@ use crate::{
     api::ApiClient,
     sources::{clawhub::ClawHubSource, SkillSource},
 };
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use comfy_table::{
     modifiers::UTF8_ROUND_CORNERS, presets::UTF8_FULL, Cell, ContentArrangement, Table,
 };
@@ -15,6 +15,12 @@ pub fn run(
     page: u32,
     json: bool,
 ) -> Result<()> {
+    if keyword.as_deref().map(str::trim).unwrap_or_default().is_empty() {
+        return Err(anyhow!(
+            "search requires a keyword. Usage: skillmux search <keyword>"
+        ));
+    }
+
     let rows = if source == "clawhub" {
         claw.search(keyword, limit, page)?
     } else {
