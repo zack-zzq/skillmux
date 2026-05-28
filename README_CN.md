@@ -250,6 +250,27 @@ cargo fmt
 cargo check
 ```
 
+### 发布
+发布脚本会同步更新 `Cargo.toml` 和 `pyproject.toml` 的版本号，自动提交版本变更，创建 annotated tag，推送分支和 tag，然后通过 GitHub CLI 创建 GitHub Release。
+
+交互式选择小版本或大版本：
+```bash
+python scripts/release.py
+```
+
+非交互式：
+```bash
+python scripts/release.py patch --yes
+python scripts/release.py major --yes
+```
+
+PowerShell：
+```powershell
+.\scripts\release.cmd patch --yes
+```
+
+可用 `--dry-run` 预览发布动作。运行前需要保持 git 工作区干净，并确保 `git` 和已登录的 GitHub CLI（`gh auth status`）可用。
+
 ---
 
 ## 许可证

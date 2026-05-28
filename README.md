@@ -254,6 +254,27 @@ cargo fmt
 cargo check
 ```
 
+### Release
+The release helper keeps `Cargo.toml` and `pyproject.toml` in sync, commits the version bump, creates an annotated tag, pushes the branch and tag, then creates a GitHub release with generated notes.
+
+Interactive:
+```bash
+python scripts/release.py
+```
+
+Non-interactive:
+```bash
+python scripts/release.py patch --yes
+python scripts/release.py major --yes
+```
+
+PowerShell:
+```powershell
+.\scripts\release.cmd patch --yes
+```
+
+Use `--dry-run` to preview the release. The script requires a clean git worktree, `git`, and an authenticated GitHub CLI (`gh auth status`).
+
 ---
 
 ## License
