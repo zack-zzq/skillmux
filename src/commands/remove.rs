@@ -9,7 +9,7 @@ pub fn run(cfg: &Config, skill: &str, purge: bool) -> Result<()> {
     let mut removed_targets = Vec::new();
 
     for t in &cfg.install.targets {
-        let s = SkillStorage::new(target_skill_dir(t));
+        let s = SkillStorage::new(target_skill_dir(t)?);
 
         if s.remove(skill)? {
             removed_targets.push(t.clone());

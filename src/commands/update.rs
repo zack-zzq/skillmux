@@ -28,7 +28,7 @@ pub fn run(
     all: bool,
     ref_name: Option<String>,
 ) -> Result<()> {
-    let candidates = collect_candidates(cfg, ref_name.as_deref());
+    let candidates = collect_candidates(cfg, ref_name.as_deref())?;
 
     if candidates.is_empty() {
         println!("No installed skills found in configured targets.");
@@ -96,13 +96,13 @@ pub fn run(
     Ok(())
 }
 
-fn collect_candidates(cfg: &Config, ref_override: Option<&str>) -> Vec<UpdateCandidate> {
+fn collect_candidates(cfg: &Config, ref_override: Option<&str>) -> Result<Vec<UpdateCandidate>> {
     let mut by_key: BTreeMap<String, UpdateCandidate> = BTreeMap::new();
 
     for target in &cfg.install.targets {
-        let storage = SkillStorage::new(target_skill_dir(target));
+        let storage = SkillStorage::new(target_skill_dir(target)?);
 
-        for folder_name in storage.list().unwrap_or_default() {
+        for folder_name in storage.list()? {
             let Some(info) = storage.load_info(&folder_name) else {
                 continue;
             };
@@ -132,7 +132,7 @@ fn collect_candidates(cfg: &Config, ref_override: Option<&str>) -> Vec<UpdateCan
         }
     }
 
-    by_key.into_values().collect()
+    Ok(by_key.into_values().collect())
 }
 
 fn source_type(info: &InstalledSkill) -> String {
@@ -140,6 +140,8 @@ fn source_type(info: &InstalledSkill) -> String {
         .get("type")
         .and_then(|v| v.as_str())
         .or_else(|| info.source.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
         .unwrap_or("kingdee")
         .to_string()
 }

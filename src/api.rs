@@ -1,5 +1,6 @@
 use anyhow::{anyhow, Result};
 use reqwest::blocking::Client;
+use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, CONTENT_TYPE, USER_AGENT};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -24,7 +25,8 @@ impl ApiClient {
         })
     }
     pub fn default_token() -> String {
-        TOKEN_DATA.iter().map(|b| (b ^ TOKEN_KEY) as char).collect()
+        String::from_utf8(TOKEN_DATA.iter().map(|b| b ^ TOKEN_KEY).collect())
+            .unwrap_or_default()
     }
     pub fn search(&self, keyword: Option<String>, page: u32, page_size: u32) -> Result<Value> {
         let mut req = self
@@ -34,7 +36,11 @@ impl ApiClient {
         if let Some(k) = keyword.as_ref() {
             req = req.query(&[("keyword", k)]);
         }
-        Ok(req.headers(self.headers()).send()?.json()?)
+        Ok(req
+            .headers(self.headers()?)
+            .send()?
+            .error_for_status()?
+            .json()?)
     }
     pub fn download(&self, id: i64, version: &str) -> Result<Vec<u8>> {
         Ok(self
@@ -45,25 +51,24 @@ impl ApiClient {
                 ("version", version.to_string()),
                 ("token", self.token.clone()),
             ])
-            .headers(self.headers())
+            .headers(self.headers()?)
             .send()?
+            .error_for_status()?
             .bytes()?
             .to_vec())
     }
-    fn headers(&self) -> reqwest::header::HeaderMap {
-        let mut h = reqwest::header::HeaderMap::new();
-        h.insert("accept", "application/json".parse().unwrap());
-        h.insert("content-type", "application/json".parse().unwrap());
+    fn headers(&self) -> Result<HeaderMap> {
+        let mut h = HeaderMap::new();
+        h.insert(ACCEPT, HeaderValue::from_static("application/json"));
+        h.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
         h.insert(
-            "user-agent",
-            format!("skillhub-cli/{}", env!("CARGO_PKG_VERSION"))
-                .parse()
-                .unwrap(),
+            USER_AGENT,
+            HeaderValue::from_str(&format!("skillhub-cli/{}", env!("CARGO_PKG_VERSION")))?,
         );
         if let Ok(v) = self.token.parse() {
             h.insert("token", v);
         }
-        h
+        Ok(h)
     }
 }
 

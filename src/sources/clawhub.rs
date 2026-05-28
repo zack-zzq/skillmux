@@ -143,7 +143,8 @@ impl SkillSource for ClawHubSource {
 
         if !looks_like_zip(&bytes) {
             return Err(anyhow!(
-                "clawhub download did not return a ZIP archive; content-type: {}; response preview: {}",
+                "clawhub download did not return a ZIP archive; \
+                content-type: {}; response preview: {}",
                 if content_type.is_empty() {
                     "<missing>"
                 } else {
@@ -291,8 +292,8 @@ fn preview_text(text: &str, max_len: usize) -> String {
         return "<non-text response>".to_string();
     }
 
-    if one_line.len() > max_len {
-        format!("{}...", &one_line[..max_len])
+    if one_line.chars().count() > max_len {
+        format!("{}...", one_line.chars().take(max_len).collect::<String>())
     } else {
         one_line
     }
@@ -347,6 +348,11 @@ mod tests {
         assert!(looks_like_zip(b"PK\x05\x06abc"));
         assert!(looks_like_zip(b"PK\x07\x08abc"));
         assert!(!looks_like_zip(b"not a zip"));
+    }
+
+    #[test]
+    fn preview_text_handles_multibyte_boundary() {
+        assert_eq!(preview_text("技能市场", 3), "技能市...");
     }
 
     #[test]

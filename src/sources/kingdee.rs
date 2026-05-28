@@ -4,12 +4,6 @@ use crate::{
 };
 use anyhow::{anyhow, Result};
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct KingdeeSource {
-    pub id: i64,
-    pub version: String,
-}
-
 impl SkillSource for ApiClient {
     fn name(&self) -> &'static str {
         "kingdee"

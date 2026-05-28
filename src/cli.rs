@@ -106,12 +106,19 @@ pub enum TargetsCmd {
 }
 
 pub fn run() -> Result<()> {
-    let cli = Cli::parse();
-    let mut cfg = Config::load(cli.config.as_deref())?;
-    let endpoint = cli.api.clone().unwrap_or_else(|| cfg.api.endpoint.clone());
-    let token = cfg.resolve_token(cli.token.clone());
+    let Cli {
+        config,
+        api,
+        token,
+        source,
+        command,
+    } = Cli::parse();
+
+    let mut cfg = Config::load(config.as_deref())?;
+    let endpoint = api.unwrap_or_else(|| cfg.api.endpoint.clone());
+    let token = cfg.resolve_token(token);
     let api = ApiClient::new(endpoint, cfg.api.timeout, token)?;
     let claw = ClawHubSource::new(None, cfg.api.timeout)?;
-    let source = cli.source.unwrap_or_else(|| cfg.source.default.clone());
-    commands::dispatch(cli.command, &mut cfg, &api, &claw, &source)
+    let source = source.unwrap_or_else(|| cfg.source.default.clone());
+    commands::dispatch(command, &mut cfg, &api, &claw, &source)
 }

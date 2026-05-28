@@ -10,21 +10,29 @@ use comfy_table::{
 pub fn run(cfg: &Config, json: bool) -> Result<()> {
     let mut rows = vec![];
     for t in &cfg.install.targets {
-        let s = SkillStorage::new(target_skill_dir(t));
-        for n in s.list().unwrap_or_default() {
+        let s = SkillStorage::new(target_skill_dir(t)?);
+        for n in s.list()? {
             if let Some(info) = s.load_info(&n) {
                 let src = info
                     .source
                     .get("type")
                     .and_then(|v| v.as_str())
                     .or_else(|| info.source.as_str())
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
                     .unwrap_or("legacy");
                 let desc = info
                     .source
                     .get("description")
                     .and_then(|v| v.as_str())
                     .unwrap_or("");
-                rows.push(serde_json::json!({"target":t,"name":info.name,"source":src,"version":info.version,"description":desc}));
+                rows.push(serde_json::json!({
+                    "target": t,
+                    "name": info.name,
+                    "source": src,
+                    "version": info.version,
+                    "description": desc,
+                }));
             }
         }
     }

@@ -4,7 +4,7 @@ use crate::{
     git_backend::git2_backend,
     installer, skill_manifest,
     sources::{clawhub::ClawHubSource, github, SkillSource},
-    storage::SkillStorage,
+    storage::{validate_skill_name, SkillStorage},
 };
 use anyhow::{anyhow, Result};
 use directories::BaseDirs;
@@ -138,11 +138,10 @@ pub fn run_silent(
 
         let sync = git2_backend::sync(&gh.url, &cache_base.join("repo"), Some(&gh.r#ref))?;
 
-        let src_root = gh
-            .subdir
-            .as_deref()
-            .map(|s| sync.repo_dir.join(s))
-            .unwrap_or(sync.repo_dir.clone());
+        let src_root = match gh.subdir.as_deref() {
+            Some(subdir) => safe_join_subdir(&sync.repo_dir, subdir)?,
+            None => sync.repo_dir.clone(),
+        };
 
         github::validate_skill_root(&src_root)?;
 
@@ -202,7 +201,7 @@ pub fn run_silent(
 
     let tmp = tempfile::tempdir()?;
 
-    zip::ZipArchive::new(std::io::Cursor::new(zip))?.extract(tmp.path())?;
+    extract_zip_safely(&zip, tmp.path())?;
 
     let skill_root = resolve_skill_root(tmp.path())?;
 
@@ -274,7 +273,7 @@ fn install_to_targets(
     let mut targets = Vec::new();
 
     for t in &cfg.install.targets {
-        let st = SkillStorage::new(target_skill_dir(t));
+        let st = SkillStorage::new(target_skill_dir(t)?);
         let dst = st.skill_path(install_name);
         let previous = st.load_info(install_name);
         let previous_version = previous
@@ -335,7 +334,11 @@ fn verify_installed_skill(dst: &Path) -> Result<()> {
     }
 
     if dst.exists() {
-        fs::remove_dir_all(dst)?;
+        if dst.is_dir() && !dst.is_symlink() {
+            fs::remove_dir_all(dst)?;
+        } else {
+            fs::remove_file(dst)?;
+        }
     }
 
     Err(anyhow!(
@@ -444,31 +447,7 @@ fn first_non_empty(values: impl IntoIterator<Item = Option<String>>) -> Option<S
 }
 
 fn validate_install_name(name: &str) -> Result<()> {
-    let trimmed = name.trim();
-
-    if trimmed.is_empty() {
-        return Err(anyhow!("skill install name cannot be empty"));
-    }
-
-    if trimmed != name {
-        return Err(anyhow!("skill install name must not have leading or trailing whitespace: {name}"));
-    }
-
-    if trimmed == "." || trimmed == ".." {
-        return Err(anyhow!("invalid skill install name: {name}"));
-    }
-
-    if trimmed.contains('/') || trimmed.contains('\\') {
-        return Err(anyhow!("skill install name must not contain path separators: {name}"));
-    }
-
-    if trimmed.chars().any(char::is_whitespace) {
-        return Err(anyhow!(
-            "skill install name must not contain whitespace: {name}; use a filesystem-safe id such as resume-assistant"
-        ));
-    }
-
-    Ok(())
+    validate_skill_name(name).map_err(|e| anyhow!("invalid skill install name: {e}"))
 }
 
 fn resolve_skill_root(extract_root: &Path) -> Result<PathBuf> {
@@ -476,10 +455,13 @@ fn resolve_skill_root(extract_root: &Path) -> Result<PathBuf> {
         return Ok(extract_root.to_path_buf());
     }
 
-    let top_dirs: Vec<_> = fs::read_dir(extract_root)?
-        .flatten()
-        .filter(|e| e.path().is_dir())
-        .collect();
+    let mut top_dirs = Vec::new();
+    for entry in fs::read_dir(extract_root)? {
+        let entry = entry?;
+        if entry.path().is_dir() {
+            top_dirs.push(entry);
+        }
+    }
 
     if top_dirs.len() == 1 {
         let p = top_dirs[0].path();
@@ -491,7 +473,8 @@ fn resolve_skill_root(extract_root: &Path) -> Result<PathBuf> {
 
     let mut candidates = Vec::new();
 
-    for entry in walkdir::WalkDir::new(extract_root).into_iter().flatten() {
+    for entry in walkdir::WalkDir::new(extract_root) {
+        let entry = entry?;
         if entry.file_type().is_file() && entry.file_name() == "SKILL.md" {
             if let Some(parent) = entry.path().parent() {
                 candidates.push(parent.to_path_buf());
@@ -511,12 +494,85 @@ fn resolve_skill_root(extract_root: &Path) -> Result<PathBuf> {
     }
 }
 
+fn safe_join_subdir(root: &Path, subdir: &str) -> Result<PathBuf> {
+    let rel = safe_relative_path(subdir)
+        .ok_or_else(|| anyhow!("subdir must be a relative path inside the repository: {subdir}"))?;
+
+    Ok(root.join(rel))
+}
+
+fn extract_zip_safely(bytes: &[u8], dest: &Path) -> Result<()> {
+    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes))?;
+
+    for index in 0..archive.len() {
+        let mut file = archive.by_index(index)?;
+        let name = file.name().to_string();
+        let rel = safe_relative_path(&name)
+            .ok_or_else(|| anyhow!("unsafe ZIP entry path: {name}"))?;
+        let outpath = dest.join(rel);
+
+        if zip_entry_is_symlink(file.unix_mode()) {
+            return Err(anyhow!("refusing to extract symlink from ZIP: {name}"));
+        }
+
+        if file.is_dir() {
+            fs::create_dir_all(&outpath)?;
+            continue;
+        }
+
+        if let Some(parent) = outpath.parent() {
+            fs::create_dir_all(parent)?;
+        }
+
+        let mut outfile = fs::File::create(&outpath)?;
+        std::io::copy(&mut file, &mut outfile)?;
+    }
+
+    Ok(())
+}
+
+fn safe_relative_path(value: &str) -> Option<PathBuf> {
+    let trimmed = value.trim();
+
+    if trimmed.is_empty() || trimmed != value {
+        return None;
+    }
+
+    let path = Path::new(value);
+    let mut out = PathBuf::new();
+
+    for component in path.components() {
+        match component {
+            std::path::Component::Normal(part) => out.push(part),
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir
+            | std::path::Component::RootDir
+            | std::path::Component::Prefix(_) => return None,
+        }
+    }
+
+    if out.as_os_str().is_empty() {
+        None
+    } else {
+        Some(out)
+    }
+}
+
+fn zip_entry_is_symlink(mode: Option<u32>) -> bool {
+    const UNIX_FILE_TYPE_MASK: u32 = 0o170000;
+    const UNIX_SYMLINK_TYPE: u32 = 0o120000;
+
+    mode.map(|m| (m & UNIX_FILE_TYPE_MASK) == UNIX_SYMLINK_TYPE)
+        .unwrap_or(false)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        first_non_empty, parse_skill_identifier, resolve_skill_root, validate_install_name,
+        extract_zip_safely, first_non_empty, parse_skill_identifier, resolve_skill_root,
+        safe_join_subdir, validate_install_name,
     };
-    use std::{fs, io::Write};
+    use std::{fs, io::Write, path::Path};
 
     #[test]
     fn parse_skill_identifier_with_source_and_version() {
@@ -569,6 +625,15 @@ mod tests {
     }
 
     #[test]
+    fn safe_join_subdir_rejects_escape_paths() {
+        let root = Path::new("repo");
+
+        assert!(safe_join_subdir(root, "skills/demo").is_ok());
+        assert!(safe_join_subdir(root, "../demo").is_err());
+        assert!(safe_join_subdir(root, "skills\\..\\demo").is_err());
+    }
+
+    #[test]
     fn resolve_github_style_single_top_dir() {
         let tmp = tempfile::tempdir().expect("tempdir");
 
@@ -593,15 +658,32 @@ mod tests {
         let extract = tempfile::tempdir().expect("extract");
         let bytes = fs::read(&zip_path).expect("read zip");
 
-        zip::ZipArchive::new(std::io::Cursor::new(bytes))
-            .expect("archive")
-            .extract(extract.path())
-            .expect("extract");
+        extract_zip_safely(&bytes, extract.path()).expect("extract");
 
         let root = resolve_skill_root(extract.path()).expect("root");
 
         assert!(root.join("SKILL.md").exists());
         assert!(!extract.path().join("SKILL.md").exists());
         assert_eq!(root.file_name().and_then(|s| s.to_str()), Some("demo-main"));
+    }
+
+    #[test]
+    fn extract_zip_safely_rejects_parent_path() {
+        let out = tempfile::tempdir().expect("out");
+        let zip_path = out.path().join("bad.zip");
+
+        let f = fs::File::create(&zip_path).expect("zip create");
+        let mut zip = zip::ZipWriter::new(f);
+        let options = zip::write::SimpleFileOptions::default();
+
+        zip.start_file("../evil.txt", options).expect("start");
+        zip.write_all(b"bad").expect("write");
+        zip.finish().expect("finish");
+
+        let extract = tempfile::tempdir().expect("extract");
+        let bytes = fs::read(&zip_path).expect("read zip");
+
+        assert!(extract_zip_safely(&bytes, extract.path()).is_err());
+        assert!(!extract.path().join("evil.txt").exists());
     }
 }

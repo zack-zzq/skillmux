@@ -1,5 +1,5 @@
 use crate::api::ApiClient;
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use directories::BaseDirs;
 use serde::{Deserialize, Serialize};
 use std::{env, fs, path::PathBuf};
@@ -21,7 +21,7 @@ pub struct Api {
     pub timeout: u64,
     pub token: Option<String>,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SourceConfig {
     #[serde(default = "default_source")]
     pub default: String,
@@ -30,6 +30,14 @@ pub struct SourceConfig {
 }
 fn default_source() -> String {
     "kingdee".into()
+}
+impl Default for SourceConfig {
+    fn default() -> Self {
+        Self {
+            default: default_source(),
+            items: serde_yaml::Value::Null,
+        }
+    }
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Install {
@@ -47,33 +55,37 @@ impl Default for Config {
             install: Install {
                 targets: ALL_TARGETS.iter().map(|s| s.to_string()).collect(),
             },
-            path: config_path(None).unwrap(),
+            path: PathBuf::new(),
         }
     }
 }
-// keep rest
 pub fn config_path(custom: Option<&str>) -> Result<PathBuf> {
     if let Some(c) = custom {
         return Ok(PathBuf::from(c));
     }
-    Ok(BaseDirs::new()
-        .unwrap()
-        .home_dir()
-        .join(".config/skillhub/config.yaml"))
+
+    Ok(home_dir()?
+        .join(".config")
+        .join("skillhub")
+        .join("config.yaml"))
 }
 impl Config {
     pub fn load(custom: Option<&str>) -> Result<Self> {
         let path = config_path(custom)?;
-        if let Some(p) = path.parent() {
-            fs::create_dir_all(p)?;
+        if let Some(p) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
+            fs::create_dir_all(p).with_context(|| {
+                format!("failed to create config directory {}", p.display())
+            })?;
         }
         let mut c = Self {
             path: path.clone(),
             ..Default::default()
         };
         if path.exists() {
-            let t = fs::read_to_string(&path)?;
-            let user: serde_yaml::Value = serde_yaml::from_str(&t)?;
+            let t = fs::read_to_string(&path)
+                .with_context(|| format!("failed to read config {}", path.display()))?;
+            let user: serde_yaml::Value = serde_yaml::from_str(&t)
+                .with_context(|| format!("failed to parse config {}", path.display()))?;
             let mut base = serde_yaml::to_value(&c)?;
             merge(&mut base, user);
             c = serde_yaml::from_value(base)?;
@@ -82,7 +94,13 @@ impl Config {
         Ok(c)
     }
     pub fn save(&self) -> Result<()> {
-        fs::write(&self.path, serde_yaml::to_string(self)?)?;
+        if let Some(parent) = self.path.parent().filter(|p| !p.as_os_str().is_empty()) {
+            fs::create_dir_all(parent).with_context(|| {
+                format!("failed to create config directory {}", parent.display())
+            })?;
+        }
+        fs::write(&self.path, serde_yaml::to_string(self)?)
+            .with_context(|| format!("failed to write config {}", self.path.display()))?;
         Ok(())
     }
     pub fn get(&self, key: &str) -> Option<String> {
@@ -98,11 +116,25 @@ impl Config {
     pub fn set(&mut self, key: &str, val: &str) -> Result<()> {
         match key {
             "api.endpoint" => self.api.endpoint = val.into(),
-            "api.timeout" => self.api.timeout = val.parse().unwrap_or(30),
+            "api.timeout" => {
+                let timeout = val
+                    .parse::<u64>()
+                    .with_context(|| format!("invalid api.timeout value: {val}"))?;
+                if timeout == 0 {
+                    return Err(anyhow!("api.timeout must be greater than 0"));
+                }
+                self.api.timeout = timeout;
+            }
             "api.token" => self.api.token = Some(val.into()),
-            "source.default" => self.source.default = val.into(),
+            "source.default" => {
+                let source = val.trim();
+                if source.is_empty() {
+                    return Err(anyhow!("source.default cannot be empty"));
+                }
+                self.source.default = source.into();
+            }
             "install.targets" => self.install.targets = parse_targets(val)?,
-            _ => {}
+            _ => return Err(anyhow!("unknown config key: {key}")),
         }
         Ok(())
     }
@@ -113,6 +145,12 @@ impl Config {
             .unwrap_or_else(ApiClient::default_token)
     }
 }
+fn home_dir() -> Result<PathBuf> {
+    BaseDirs::new()
+        .map(|dirs| dirs.home_dir().to_path_buf())
+        .ok_or_else(|| anyhow!("failed to resolve user home directory"))
+}
+
 fn merge(a: &mut serde_yaml::Value, b: serde_yaml::Value) {
     match (a, b) {
         (serde_yaml::Value::Mapping(a), serde_yaml::Value::Mapping(b)) => {
@@ -153,28 +191,28 @@ where
     }
     Ok(out)
 }
-pub fn install_check_path(t: &str) -> PathBuf {
-    let h = BaseDirs::new().unwrap().home_dir().to_path_buf();
-    match t {
+pub fn install_check_path(t: &str) -> Result<PathBuf> {
+    let h = home_dir()?;
+    Ok(match t {
         "codex" => h.join(".codex/skills"),
         "workbuddy" => h.join(".workbuddy/skills"),
         "qoder" => h.join(".qoder"),
         "qoderwork" => h.join(".qoderwork"),
         "kiro" => h.join(".kiro"),
         _ => h,
-    }
+    })
 }
-pub fn target_skill_dir(t: &str) -> PathBuf {
-    let h = BaseDirs::new().unwrap().home_dir().to_path_buf();
-    match t {
+pub fn target_skill_dir(t: &str) -> Result<PathBuf> {
+    let h = home_dir()?;
+    Ok(match t {
         "codex" => h.join(".codex/skills"),
         _ => h.join(format!(".{t}/skills")),
-    }
+    })
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_targets, parse_targets_args};
+    use super::{parse_targets, parse_targets_args, Config, SourceConfig};
 
     #[test]
     fn parse_targets_comma() {
@@ -199,5 +237,20 @@ mod tests {
     fn parse_targets_invalid() {
         let err = parse_targets("codex,badone").expect_err("must fail");
         assert!(err.to_string().contains("allowed targets"));
+    }
+
+    #[test]
+    fn default_source_is_kingdee() {
+        assert_eq!(SourceConfig::default().default, "kingdee");
+        assert_eq!(Config::default().source.default, "kingdee");
+    }
+
+    #[test]
+    fn set_rejects_unknown_key_and_invalid_timeout() {
+        let mut cfg = Config::default();
+
+        assert!(cfg.set("bad.key", "value").is_err());
+        assert!(cfg.set("api.timeout", "nope").is_err());
+        assert!(cfg.set("api.timeout", "0").is_err());
     }
 }

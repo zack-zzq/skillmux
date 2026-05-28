@@ -2,7 +2,7 @@ use crate::{
     cli::{ConfigCmd, TargetsCmd},
     config::{install_check_path, parse_targets_args, Config, ALL_TARGETS},
 };
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use comfy_table::{presets::UTF8_FULL, Attribute, Cell, Table};
 pub fn run(cfg: &mut Config, cmd: ConfigCmd) -> Result<()> {
     match cmd {
@@ -20,7 +20,7 @@ pub fn run(cfg: &mut Config, cmd: ConfigCmd) -> Result<()> {
             ]);
             table.add_row(vec![
                 Cell::new("api.token"),
-                Cell::new(cfg.api.token.clone().unwrap_or_default()),
+                Cell::new(secret_status(cfg.api.token.as_deref())),
             ]);
             table.add_row(vec![
                 Cell::new("source.default"),
@@ -32,24 +32,36 @@ pub fn run(cfg: &mut Config, cmd: ConfigCmd) -> Result<()> {
             ]);
             println!("{table}");
         }
-        ConfigCmd::Get { key } => println!("{}", cfg.get(&key).unwrap_or_default()),
+        ConfigCmd::Get { key } => {
+            let value = cfg
+                .get(&key)
+                .ok_or_else(|| anyhow!("unknown config key: {key}"))?;
+            println!("{value}");
+        }
         ConfigCmd::Set { key, value } => {
             cfg.set(&key, &value)?;
             cfg.save()?;
         }
         ConfigCmd::Targets { action, targets } => match action {
-            Some(TargetsCmd::List) => print_targets(cfg),
+            Some(TargetsCmd::List) => print_targets(cfg)?,
             Some(TargetsCmd::Set { targets }) => set_targets(cfg, &targets)?,
             Some(TargetsCmd::Add { targets }) => add_targets(cfg, &targets)?,
             Some(TargetsCmd::Remove { targets }) => remove_targets(cfg, &targets)?,
-            None if targets.is_empty() => print_targets(cfg),
+            None if targets.is_empty() => print_targets(cfg)?,
             None => set_targets(cfg, &targets)?,
         },
     }
     Ok(())
 }
 
-fn print_targets(cfg: &Config) {
+fn secret_status(value: Option<&str>) -> &'static str {
+    match value.map(str::trim) {
+        Some(v) if !v.is_empty() => "<set>",
+        _ => "",
+    }
+}
+
+fn print_targets(cfg: &Config) -> Result<()> {
     let mut table = Table::new();
     table.load_preset(UTF8_FULL);
     table.set_header(vec![
@@ -65,10 +77,11 @@ fn print_targets(cfg: &Config) {
             } else {
                 "no"
             }),
-            Cell::new(install_check_path(t).display().to_string()),
+            Cell::new(install_check_path(t)?.display().to_string()),
         ]);
     }
     println!("{table}");
+    Ok(())
 }
 
 fn set_targets(cfg: &mut Config, targets: &[String]) -> Result<()> {
