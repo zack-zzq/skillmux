@@ -277,6 +277,16 @@ PowerShell：
 
 可用 `--dry-run` 预览发布动作。运行前需要保持 git 工作区干净，并确保 `git` 和已登录的 GitHub CLI（`gh auth status`）可用。
 
+`publish` GitHub Actions workflow 会在 GitHub Release 发布后执行。它会构建 PyPI wheel 和独立 CLI 压缩包，目标平台包括：
+- `x86_64-unknown-linux-gnu`
+- `aarch64-unknown-linux-gnu`
+- `x86_64-pc-windows-msvc`
+- `aarch64-pc-windows-msvc`
+- `x86_64-apple-darwin`
+- `aarch64-apple-darwin`
+
+workflow 会把全部构建产物和 `SHA256SUMS.txt` 上传到同一个 GitHub Release 附件中，并发布 PyPI wheel；配置对应的 Secrets/Variables 后，还会自动更新 Homebrew、WinGet 和 Launchpad PPA。具体配置见 `packaging/homebrew`、`packaging/winget`、`packaging/ppa`。
+
 ---
 
 ## 许可证

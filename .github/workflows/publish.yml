@@ -1,12 +1,30 @@
 name: publish
 
 on:
-  push:
-    tags: ["v*"]
+  release:
+    types: [published]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag to build and attach assets to, e.g. v3.2.0"
+        required: true
+        type: string
+      publish_pypi:
+        description: "Publish downloaded wheels to PyPI"
+        required: true
+        default: false
+        type: boolean
+      publish_package_managers:
+        description: "Update Homebrew, WinGet, and Launchpad PPA"
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
+
+env:
+  RELEASE_TAG: ${{ github.event.release.tag_name || github.event.inputs.tag }}
 
 jobs:
   build:
@@ -30,6 +48,10 @@ jobs:
             target: aarch64-pc-windows-msvc
             manylinux: "off"
 
+          - os: macos-13
+            target: x86_64-apple-darwin
+            manylinux: "off"
+
           - os: macos-latest
             target: aarch64-apple-darwin
             manylinux: "off"
@@ -38,6 +60,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.release.tag_name || github.event.inputs.tag }}
 
       - name: Ensure secret exists
         shell: bash
@@ -73,14 +97,58 @@ jobs:
         env:
           KDSKILLHUB_DEFAULT_TOKEN: ${{ secrets.KDSKILLHUB_DEFAULT_TOKEN }}
 
+      - name: Package release asset
+        shell: bash
+        run: |
+          python scripts/packaging/package-release-asset.py \
+            --target "${{ matrix.target }}" \
+            --out release-assets
+
       - name: Upload wheel artifact
         uses: actions/upload-artifact@v7
         with:
-          name: dist-${{ matrix.os }}-${{ matrix.target }}
+          name: wheels-${{ matrix.target }}
           path: dist
 
-  publish:
+      - name: Upload release asset artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-assets-${{ matrix.target }}
+          path: release-assets
+
+  release-assets:
     needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: release-dist
+          merge-multiple: true
+
+      - name: Generate SHA256SUMS
+        shell: bash
+        run: |
+          find release-dist -maxdepth 1 -type f ! -name SHA256SUMS.txt -print0 \
+            | sort -z \
+            | xargs -0 sha256sum > release-dist/SHA256SUMS.txt
+
+      - name: Upload assets to GitHub Release
+        shell: bash
+        run: |
+          gh release upload "$RELEASE_TAG" release-dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  publish-pypi:
+    needs: build
+    if: github.event_name == 'release' || github.event.inputs.publish_pypi == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -92,7 +160,214 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           path: dist
+          pattern: wheels-*
           merge-multiple: true
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist
+
+  # publish-homebrew:
+  #   needs: release-assets
+  #   if: github.event_name == 'release' || github.event.inputs.publish_package_managers == 'true'
+  #   runs-on: ubuntu-latest
+  #   permissions:
+  #     contents: read
+  #     actions: read
+
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #       with:
+  #         ref: ${{ github.event.release.tag_name || github.event.inputs.tag }}
+
+  #     - name: Check Homebrew configuration
+  #       id: homebrew-config
+  #       shell: bash
+  #       run: |
+  #         if [ -z "${HOMEBREW_TAP_TOKEN:-}" ]; then
+  #           echo "::notice::Skipping Homebrew publish because HOMEBREW_TAP_TOKEN is not configured."
+  #           echo "enabled=false" >> "$GITHUB_OUTPUT"
+  #           exit 0
+  #         fi
+  #         tap_repo="${HOMEBREW_TAP_REPO:-${GITHUB_REPOSITORY_OWNER}/homebrew-tap}"
+  #         echo "enabled=true" >> "$GITHUB_OUTPUT"
+  #         echo "tap_repo=$tap_repo" >> "$GITHUB_OUTPUT"
+  #       env:
+  #         HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+  #         HOMEBREW_TAP_REPO: ${{ vars.HOMEBREW_TAP_REPO }}
+
+  #     - name: Download release asset artifacts
+  #       if: steps.homebrew-config.outputs.enabled == 'true'
+  #       uses: actions/download-artifact@v4
+  #       with:
+  #         path: release-dist
+  #         pattern: release-assets-*
+  #         merge-multiple: true
+
+  #     - name: Update tap formula
+  #       if: steps.homebrew-config.outputs.enabled == 'true'
+  #       shell: bash
+  #       run: |
+  #         version="${RELEASE_TAG#v}"
+  #         git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/${TAP_REPO}.git" tap
+  #         python scripts/packaging/update-homebrew-formula.py \
+  #           --tap-root tap \
+  #           --assets-dir release-dist \
+  #           --repo "$GITHUB_REPOSITORY" \
+  #           --tag "$RELEASE_TAG" \
+  #           --version "$version"
+
+  #         git -C tap config user.name "github-actions[bot]"
+  #         git -C tap config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+  #         git -C tap add Formula/skillmux.rb
+  #         if git -C tap diff --cached --quiet; then
+  #           echo "::notice::Homebrew formula is already up to date."
+  #         else
+  #           git -C tap commit -m "skillmux ${version}"
+  #           git -C tap push
+  #         fi
+  #       env:
+  #         HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+  #         TAP_REPO: ${{ steps.homebrew-config.outputs.tap_repo }}
+
+  # publish-winget:
+  #   needs: release-assets
+  #   if: github.event_name == 'release' || github.event.inputs.publish_package_managers == 'true'
+  #   runs-on: windows-latest
+  #   permissions:
+  #     contents: read
+
+  #   steps:
+  #     - name: Check WinGet configuration
+  #       id: winget-config
+  #       shell: pwsh
+  #       run: |
+  #         if ([string]::IsNullOrWhiteSpace($env:WINGET_CREATE_GITHUB_TOKEN)) {
+  #           Write-Host "::notice::Skipping WinGet publish because WINGET_CREATE_GITHUB_TOKEN is not configured."
+  #           "enabled=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+  #           exit 0
+  #         }
+  #         if ([string]::IsNullOrWhiteSpace($env:WINGET_PACKAGE_IDENTIFIER)) {
+  #           "package_id=ZackZhu.Skillmux" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+  #         } else {
+  #           "package_id=$env:WINGET_PACKAGE_IDENTIFIER" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+  #         }
+  #         "enabled=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+  #       env:
+  #         WINGET_CREATE_GITHUB_TOKEN: ${{ secrets.WINGET_CREATE_GITHUB_TOKEN }}
+  #         WINGET_PACKAGE_IDENTIFIER: ${{ vars.WINGET_PACKAGE_IDENTIFIER }}
+
+  #     - name: Install .NET runtime for wingetcreate
+  #       if: steps.winget-config.outputs.enabled == 'true'
+  #       uses: actions/setup-dotnet@v4
+  #       with:
+  #         dotnet-version: 6.0.x
+
+  #     - name: Download wingetcreate
+  #       if: steps.winget-config.outputs.enabled == 'true'
+  #       shell: pwsh
+  #       run: |
+  #         Invoke-WebRequest https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe
+
+  #     - name: Submit WinGet update
+  #       if: steps.winget-config.outputs.enabled == 'true'
+  #       shell: pwsh
+  #       run: |
+  #         $version = $env:RELEASE_TAG -replace '^v', ''
+  #         $x64Url = "https://github.com/$env:GITHUB_REPOSITORY/releases/download/$env:RELEASE_TAG/skillmux-$version-x86_64-pc-windows-msvc.zip"
+  #         $arm64Url = "https://github.com/$env:GITHUB_REPOSITORY/releases/download/$env:RELEASE_TAG/skillmux-$version-aarch64-pc-windows-msvc.zip"
+  #         .\wingetcreate.exe update "${{ steps.winget-config.outputs.package_id }}" `
+  #           --urls "$x64Url|x64" "$arm64Url|arm64" `
+  #           --version "$version" `
+  #           --submit `
+  #           --no-open
+  #       env:
+  #         WINGET_CREATE_GITHUB_TOKEN: ${{ secrets.WINGET_CREATE_GITHUB_TOKEN }}
+
+  # publish-ppa:
+  #   needs: release-assets
+  #   if: github.event_name == 'release' || github.event.inputs.publish_package_managers == 'true'
+  #   runs-on: ubuntu-latest
+  #   permissions:
+  #     contents: read
+
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #       with:
+  #         ref: ${{ github.event.release.tag_name || github.event.inputs.tag }}
+
+  #     - name: Check Launchpad PPA configuration
+  #       id: ppa-config
+  #       shell: bash
+  #       run: |
+  #         if [ -z "${LAUNCHPAD_GPG_PRIVATE_KEY:-}" ] || [ -z "${LAUNCHPAD_PPA:-}" ]; then
+  #           echo "::notice::Skipping PPA publish because LAUNCHPAD_GPG_PRIVATE_KEY or LAUNCHPAD_PPA is not configured."
+  #           echo "enabled=false" >> "$GITHUB_OUTPUT"
+  #           exit 0
+  #         fi
+  #         echo "enabled=true" >> "$GITHUB_OUTPUT"
+  #       env:
+  #         LAUNCHPAD_GPG_PRIVATE_KEY: ${{ secrets.LAUNCHPAD_GPG_PRIVATE_KEY }}
+  #         LAUNCHPAD_PPA: ${{ vars.LAUNCHPAD_PPA }}
+
+  #     - name: Install Debian packaging tools
+  #       if: steps.ppa-config.outputs.enabled == 'true'
+  #       shell: bash
+  #       run: |
+  #         sudo apt-get update
+  #         sudo apt-get install -y devscripts debhelper dput gnupg cargo rustc pkg-config libssl-dev ca-certificates
+
+  #     - name: Import Launchpad signing key
+  #       if: steps.ppa-config.outputs.enabled == 'true'
+  #       id: gpg
+  #       shell: bash
+  #       run: |
+  #         mkdir -p ~/.gnupg
+  #         chmod 700 ~/.gnupg
+  #         echo "allow-loopback-pinentry" > ~/.gnupg/gpg-agent.conf
+  #         echo "pinentry-mode loopback" > ~/.gnupg/gpg.conf
+  #         printf '%s' "$LAUNCHPAD_GPG_PRIVATE_KEY" | gpg --batch --import
+  #         key_id="$(gpg --batch --list-secret-keys --with-colons --keyid-format LONG | awk -F: '/^sec:/ {print $5; exit}')"
+  #         if [ -z "$key_id" ]; then
+  #           echo "No secret GPG key was imported" >&2
+  #           exit 1
+  #         fi
+  #         if [ -n "${LAUNCHPAD_GPG_PASSPHRASE:-}" ]; then
+  #           printf 'unlock\n' | gpg --batch --yes --pinentry-mode loopback \
+  #             --passphrase "$LAUNCHPAD_GPG_PASSPHRASE" \
+  #             --local-user "$key_id" \
+  #             --clearsign >/dev/null
+  #         fi
+  #         echo "key_id=$key_id" >> "$GITHUB_OUTPUT"
+  #       env:
+  #         LAUNCHPAD_GPG_PRIVATE_KEY: ${{ secrets.LAUNCHPAD_GPG_PRIVATE_KEY }}
+  #         LAUNCHPAD_GPG_PASSPHRASE: ${{ secrets.LAUNCHPAD_GPG_PASSPHRASE }}
+
+  #     - name: Build signed PPA source package
+  #       if: steps.ppa-config.outputs.enabled == 'true'
+  #       id: ppa-source
+  #       shell: bash
+  #       run: |
+  #         version="${RELEASE_TAG#v}"
+  #         series="${PPA_UBUNTU_SERIES:-noble}"
+  #         changes_file="$(bash scripts/packaging/prepare-ppa-source.sh "$version" "$series" "${PPA_REVISION:-1}")"
+  #         echo "changes_file=$changes_file" >> "$GITHUB_OUTPUT"
+  #       env:
+  #         DEBSIGN_KEYID: ${{ steps.gpg.outputs.key_id }}
+  #         DEBFULLNAME: ${{ vars.DEBFULLNAME }}
+  #         DEBEMAIL: ${{ vars.DEBEMAIL }}
+  #         PPA_UBUNTU_SERIES: ${{ vars.PPA_UBUNTU_SERIES }}
+  #         PPA_REVISION: ${{ vars.PPA_REVISION }}
+
+  #     - name: Upload source package to Launchpad PPA
+  #       if: steps.ppa-config.outputs.enabled == 'true'
+  #       shell: bash
+  #       run: |
+  #         target="$LAUNCHPAD_PPA"
+  #         if [[ "$target" != ppa:* ]]; then
+  #           target="ppa:$target"
+  #         fi
+  #         dput "$target" "${{ steps.ppa-source.outputs.changes_file }}"
+  #       env:
+  #         LAUNCHPAD_PPA: ${{ vars.LAUNCHPAD_PPA }}

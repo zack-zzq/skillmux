@@ -281,6 +281,16 @@ PowerShell:
 
 Use `--dry-run` to preview the release. The script requires a clean git worktree, `git`, and an authenticated GitHub CLI (`gh auth status`).
 
+The `publish` GitHub Actions workflow runs when a GitHub Release is published. It builds PyPI wheels and standalone CLI archives for:
+- `x86_64-unknown-linux-gnu`
+- `aarch64-unknown-linux-gnu`
+- `x86_64-pc-windows-msvc`
+- `aarch64-pc-windows-msvc`
+- `x86_64-apple-darwin`
+- `aarch64-apple-darwin`
+
+The workflow uploads all build outputs plus `SHA256SUMS.txt` to the same GitHub Release, publishes wheels to PyPI, and can update Homebrew, WinGet, and Launchpad PPA when the related secrets and variables are configured. See `packaging/homebrew`, `packaging/winget`, and `packaging/ppa` for the required CI configuration.
+
 ---
 
 ## License
