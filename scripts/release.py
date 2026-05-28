@@ -165,6 +165,8 @@ def run_capture(args: list[str]) -> str:
         args,
         cwd=ROOT,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
     )
@@ -225,6 +227,8 @@ def ensure_tag_available(remote: str, tag: str) -> None:
         ["git", "ls-remote", "--exit-code", "--tags", remote, f"refs/tags/{tag}"],
         cwd=ROOT,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
     )
@@ -239,6 +243,8 @@ def ensure_gh_auth() -> None:
         ["gh", "auth", "status"],
         cwd=ROOT,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
     )
