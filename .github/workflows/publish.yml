@@ -124,10 +124,11 @@ jobs:
       actions: read
 
     steps:
-      - name: Download all build artifacts
+      - name: Download release asset artifacts
         uses: actions/download-artifact@v8
         with:
           path: release-dist
+          pattern: release-assets-*
           merge-multiple: true
 
       - name: Generate SHA256SUMS

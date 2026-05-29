@@ -4,8 +4,7 @@ from __future__ import annotations
 import argparse
 import os
 import re
-import stat
-import tarfile
+import shutil
 import zipfile
 from pathlib import Path
 
@@ -79,34 +78,13 @@ def extract_binary_from_wheel(package_name: str, target: str) -> Path | None:
     return None
 
 
-def add_tar_file(archive: tarfile.TarFile, source: Path, arcname: str, mode: int | None = None) -> None:
-    info = archive.gettarinfo(str(source), arcname)
-    if mode is not None:
-        info.mode = mode
-    with source.open("rb") as handle:
-        archive.addfile(info, handle)
-
-
-def write_tar_gz(output: Path, binary: Path, binary_arcname: str) -> None:
-    with tarfile.open(output, "w:gz") as archive:
-        add_tar_file(archive, binary, binary_arcname, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH)
-        for extra in ("README.md", "LICENSE"):
-            path = ROOT / extra
-            if path.is_file():
-                add_tar_file(archive, path, extra)
-
-
-def write_zip(output: Path, binary: Path, binary_arcname: str) -> None:
-    with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-        archive.write(binary, binary_arcname)
-        for extra in ("README.md", "LICENSE"):
-            path = ROOT / extra
-            if path.is_file():
-                archive.write(path, extra)
+def release_asset_name(package_name: str, version: str, target: str) -> str:
+    suffix = ".exe" if "windows" in target else ""
+    return f"{package_name}-{version}-{target}{suffix}"
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Package a compiled CLI binary as a release asset.")
+    parser = argparse.ArgumentParser(description="Copy a compiled CLI binary as a release asset.")
     parser.add_argument("--target", required=True, help="Rust target triple, e.g. x86_64-apple-darwin")
     parser.add_argument("--out", default="release-assets", help="Output directory")
     return parser.parse_args()
@@ -122,14 +100,10 @@ def main() -> int:
         output_dir = ROOT / output_dir
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    asset_stem = f"{package_name}-{version}-{args.target}"
-    binary_arcname = binary_name(package_name, args.target)
-    if "windows" in args.target:
-        output = output_dir / f"{asset_stem}.zip"
-        write_zip(output, binary, binary_arcname)
-    else:
-        output = output_dir / f"{asset_stem}.tar.gz"
-        write_tar_gz(output, binary, binary_arcname)
+    output = output_dir / release_asset_name(package_name, version, args.target)
+    shutil.copy2(binary, output)
+    if "windows" not in args.target:
+        os.chmod(output, output.stat().st_mode | 0o755)
 
     print(output)
     return 0
