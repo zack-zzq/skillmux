@@ -1,0 +1,30 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.10.0.schema.json
+
+PackageIdentifier: ZackZhu.SkillMux
+PackageVersion: 3.2.2
+Commands:
+  - skillmux
+
+Installers:
+  - Architecture: x64
+    InstallerType: zip
+    NestedInstallerType: portable
+    NestedInstallerFiles:
+      - RelativeFilePath: skillmux.exe
+        PortableCommandAlias: skillmux
+    InstallerUrl: https://github.com/zack-zzq/skillmux/releases/download/v3.2.2/skillmux-3.2.2-x86_64-pc-windows-msvc.zip
+    InstallerSha256: 0B3EEFE3F2304FA94A55BC132142A3664F5AE61ADD2F292B4E02C34D7555F1A3
+    UpgradeBehavior: uninstallPrevious
+
+  - Architecture: arm64
+    InstallerType: zip
+    NestedInstallerType: portable
+    NestedInstallerFiles:
+      - RelativeFilePath: skillmux.exe
+        PortableCommandAlias: skillmux
+    InstallerUrl: https://github.com/zack-zzq/skillmux/releases/download/v3.2.2/skillmux-3.2.2-aarch64-pc-windows-msvc.zip
+    InstallerSha256: C47EAC9E8288FF832DBE1113CB333482FC50605FB00C9B20C9FEB1F17E907735
+    UpgradeBehavior: uninstallPrevious
+
+ManifestType: installer
+ManifestVersion: 1.10.0
