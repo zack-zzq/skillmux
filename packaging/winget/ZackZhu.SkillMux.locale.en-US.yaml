@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.10.0.schema.json
 
 PackageIdentifier: ZackZhu.SkillMux
-PackageVersion: 3.2.2
+PackageVersion: 3.2.3
 PackageLocale: en-US
 Publisher: Zack Zhu
 PublisherUrl: https://github.com/zack-zzq
@@ -21,6 +21,6 @@ Tags:
   - agent
   - automation
   - developer-tools
-ReleaseNotesUrl: https://github.com/zack-zzq/skillmux/releases/tag/v3.2.2
+ReleaseNotesUrl: https://github.com/zack-zzq/skillmux/releases/tag/v3.2.3
 ManifestType: defaultLocale
 ManifestVersion: 1.10.0
